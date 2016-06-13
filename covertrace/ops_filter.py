@@ -68,10 +68,11 @@ def filter_from_last_frames(arr, FRAME_START=0, FRAME_END=None, LEFT=0):
     """Find NaNs and propagate NaNs to previous frames.
     LEFT is how many frames you want to go back.
 
-    >>> arr = np.array([[0, np.nan, np.nan], [0, 0, np.nan]], np.float32)
-    >>> filter_from_last_frames(arr, LEFT=1)
-    array([[ nan,  nan,  nan],
-           [  0.,  nan,  nan]], dtype=float32)
+    Examples:
+        >>> arr = np.array([[0, np.nan, np.nan], [0, 0, np.nan]], np.float32)
+        >>> filter_from_last_frames(arr, LEFT=1)
+        array([[ nan,  nan,  nan],
+               [  0.,  nan,  nan]], dtype=float32)
     """
     df = pd.DataFrame(arr)
     nan_appeared = df.isnull().diff(axis=1).values

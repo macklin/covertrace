@@ -1,12 +1,12 @@
 '''
 
-staged.df: cached site.df
+staged.arr: cached site.arr
 staged.name: cached name of site
-staged.state: A list to slice staged.df into working_df.
+staged.state: A list to slice staged.arr into working_arr.
 
 '''
 
-
+from __future__ import division
 from os.path import join, basename, exists
 from itertools import izip, izip_longest
 import pickle
@@ -19,8 +19,9 @@ import numpy as np
 
 class Stage(object):
     name = None
-    df = None
+    arr = None
     state = None
+    new_file_name = 'arr_modified.npz'
 
 staged = Stage()
 
@@ -41,7 +42,7 @@ class data_array(np.ndarray):
 
         if isinstance(labels, np.ndarray):
             labels = labels.tolist()
-        sort_func = lambda x: (x[1][0], x[1][1])  # works with enumerate
+        sort_func = lambda x: (x[1][0], x[1][1], x[1][2])  # works with enumerate
         sort_idx = [i[0] for i in sorted(enumerate(labels), key=sort_func)]
         data = data[sort_idx, :, :]
         labels = [labels[i] for i in sort_idx]
@@ -79,7 +80,7 @@ class data_array(np.ndarray):
 
 
 class Bundle(object):
-    def __init__(self, parent_folder, subfolders=None, conditions=[], file_name='df.npz'):
+    def __init__(self, parent_folder, subfolders=None, conditions=[], file_name='arr.npz'):
         parent_folder = parent_folder.rstrip('/')
         if subfolders is None:
             self.sites = Sites([parent_folder, ], file_name, [conditions, ])
@@ -88,13 +89,13 @@ class Bundle(object):
             self.sites = Sites(folders, file_name, conditions)
         self.staged = staged
 
-    def propagate(self, operations, file_name='df_modified.npz'):
+    def propagate(self, operations):
         """Propagate operations to all the sites.
-        operations: wrapper from df_operations
+        operations: wrapper from arr_operations
         """
         if not isinstance(operations, list):
             operations = [operations, ]
-        self.sites._propagate_each(operations, file_name)
+        self.sites._propagate_each(operations)
 
     def plotter(self, operation, fig=None, ax=None):
         # FIXME: subplots shape... how to determine?
@@ -103,7 +104,7 @@ class Bundle(object):
             plt.tight_layout(pad=0.5)
         self.sites._plotter(operation, fig, axes)
 
-    def merge_conditions(self, file_name='df_modified.npz'):
+    def merge_conditions(self):
         """Merge dataframe by conditions.
         Sites name will be also changed to conditions.
         """
@@ -114,7 +115,7 @@ class Bundle(object):
             store_name.append([i.name for i in self.sites if i.condition is sc])
             store_condition.append([i.condition for i in self.sites if i.condition is sc])
         for name, cond in zip(store_name, store_condition):
-            self.sites._merge_sites(sites_name=name, file_name=file_name, condition_name=cond)
+            self.sites._merge_sites(sites_name=name, condition_name=cond)
 
     def save(self, file_name):
         pickle.dump(self, open('{0}.pkl'.format(file_name), 'w'))
@@ -133,10 +134,9 @@ class Sites(object):
             yield getattr(self, sites_name[__num_keys])
             __num_keys += 1
 
-    def _propagate_each(self, operations, file_name):
+    def _propagate_each(self, operations):
         for site in self:
-            df = site._operate(operations)
-            site._save_df(df, file_name)
+            site._operate(operations)
 
     def _delete_file(self, file_name):
         for site in self:
@@ -150,9 +150,9 @@ class Sites(object):
         the sites_name. The rest of attributes will be removed.
         """
         site = getattr(self, sites_name[0])
-        dfs = [getattr(self, s_name).df for s_name in sites_name]
-        new_df = np.concatenate(dfs, axis=1)
-        site.save(file_name, df=new_df)
+        arrs = [getattr(self, s_name).arr for s_name in sites_name]
+        new_arr = np.concatenate(arrs, axis=1)
+        site.save(arr=new_arr)
         [delattr(self, s_name) for s_name in sites_name[1:]]
 
     def _plotter(self, operation, fig, axes=None):
@@ -182,73 +182,84 @@ class Site(object):
         self.name = basename(directory)
 
     @property
-    def df(self):
+    def arr(self):
         if not self.name == staged.name:
             staged.name = self.name
-            staged.df = self._read_df(join(self.directory, self.file_name))
-        return staged.df
+            staged.arr = self._read_arr(join(self.directory, self.file_name))
+        return staged.arr
 
     @staticmethod
-    def _read_df(path):
+    def _read_arr(path):
         file_obj = np.load(path)
         return data_array(file_obj['data'], file_obj['labels'].tolist())
 
     @property
-    def working_df(self):
+    def working_arr(self):
         if isinstance(staged.state[0], list):
-            df_list = []
+            arr_list = []
             for st in staged.state:
-                df_list.append(self._retrieve_working_df(self.df, st))
-            return df_list
+                arr_list.append(self._retrieve_working_arr(self.arr, st))
+            return arr_list
         if isinstance(staged.state[0], str):
-            return self._retrieve_working_df(self.df, staged.state)
+            return self._retrieve_working_arr(self.arr, staged.state)
         else:
-            return self.df
+            return self.arr
 
     @staticmethod
-    def _retrieve_working_df(df, st):
+    def _retrieve_working_arr(arr, st):
         for num, s in enumerate(st):
             if num == 0:
-                ret = df[s]
+                ret = arr[s]
             else:
                 ret = ret[s]
         return ret
 
-
-    def save(self, file_name, df=[]):
+    def save(self, arr=[], labels=[]):
         dic_save = {}
-        if not len(df):
-            df = self.df
-        dic_save['data'] = df
-        dic_save['labels'] = self.df.labels
-        np.savez_compressed(join(self.directory, file_name), **dic_save)
-        self.file_name = file_name
+        if not len(arr):
+            arr = self.arr
+        dic_save['data'] = arr
+        if not labels:
+            labels = self.arr.labels
+        dic_save['labels'] = labels
+        np.savez_compressed(join(self.directory, staged.new_file_name), **dic_save)
+        self.file_name = staged.new_file_name
         print '\r'+'{0}: file_name is updated to {1}'.format(self.name, self.file_name),
 
-    def _delete_file(self, df, file_name):
+    def _delete_file(self, arr, file_name):
         if exists(join(self.directory, file_name)):
             os.remove(join(self.directory, file_name))
 
+    def _operate(self, operations):
+        for op in operations:
+            op(self.working_arr)
+        self.save()
 
+    def add_prop(self, new_label):
+        zero_arr = np.expand_dims(np.zeros(self.arr[0, :, :].shape), axis=0)
+        new_arr = np.concatenate([self.arr, zero_arr], axis=0)
+        self.save(arr=new_arr, labels=self.arr.labels.append(new_label))
+        staged.name = None
 
 
 if __name__ == '__main__':
     parent_folder = '/Users/kudo/gdrive/GitHub/covertrace/data'
     sub_folders = ['Pos005', 'Pos007', 'Pos008']
     conditions = ['IL1B', 'IL1B', 'LPS']
-    aa = Site(parent_folder, 'df.npz')
-    bund = Bundle(parent_folder,sub_folders, conditions, file_name='df.npz')
+    aa = Site(parent_folder, 'arr.npz')
+    bund = Bundle(parent_folder, sub_folders, conditions, file_name='arr.npz')
     # bund.state = ['cytoplasm', 'DAPI', 'area']
     bund.staged.state = ['cytoplasm', 'DAPI', 'area']
-    print bund.sites.Pos005.working_df.shape
+    print bund.sites.Pos005.working_arr.shape
     bund.staged.state = ['nuclei', 'DAPI']
-    print bund.sites.Pos005.working_df.shape
+    print bund.sites.Pos005.working_arr.shape
     bund.staged.state = [['nuclei', 'DAPI'], ['cytoplasm', 'DAPI','area']]
-    print bund.sites.Pos005.working_df[0].shape, bund.sites.Pos005.working_df[1].shape
+    print bund.sites.Pos005.working_arr[0].shape, bund.sites.Pos005.working_arr[1].shape
     bund.staged.state = [None]
-    print bund.sites.Pos005.working_df.shape
-
-
+    print bund.sites.Pos005.working_arr.shape
+    bund.staged.state = ['cytoplasm', 'DAPI', 'area']
+    print bund.sites.Pos005.working_arr.shape
     # bund.merge_conditions()
     # tt = Bundle(parent_folder, sub_folders)
-    import ipdb;ipdb.set_trace()
+    from ops_plotter import plot_all
+    plot_all(bund.sites.Pos005.working_arr)
