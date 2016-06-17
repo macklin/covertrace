@@ -79,6 +79,33 @@ class data_array(np.ndarray):
             return super(data_array, self).__getattr__(key)
 
 
+class cell_array(data_array):
+    def __new__(cls, data, labels=[]):
+        # Sort index and data.
+
+        if isinstance(labels, np.ndarray):
+            labels = labels.tolist()
+        sort_func = lambda x: (x[1][0], x[1][1], x[1][2])  # works with enumerate
+        single_label_idx = [a for a, aa in enumerate(labels) if len(aa) == 1]
+        multi_labels = [a for a in labels if len(a) == 3]
+        sort_idx = [i[0] + len(single_label_idx) for i in sorted(enumerate(multi_labels), key=sort_func)]
+        for num, i in enumerate(single_label_idx):
+            sort_idx.insert(i, num)
+        data = data[sort_idx, :, :]
+        labels = [labels[i] for i in sort_idx]
+
+        if 'prop' not in labels:
+            zero_arr = np.expand_dims(np.zeros(data[0, :, :].shape), axis=0)
+            data = np.concatenate([zero_arr, data], axis=0)
+            labels.insert(0, ['prop'])
+
+        obj = np.asarray(data).view(cls)
+
+        if labels:
+            obj.labels = labels
+        return obj
+
+
 class Bundle(object):
     def __init__(self, parent_folder, subfolders=None, conditions=[], file_name='arr.npz'):
         parent_folder = parent_folder.rstrip('/')
@@ -170,7 +197,7 @@ class Sites(object):
 
 
 
-class Site(object):
+class BaseSite(object):
     """name: equivalent to attribute name of Sites
     """
     merged = 0
@@ -193,8 +220,10 @@ class Site(object):
         file_obj = np.load(path)
         return data_array(file_obj['data'], file_obj['labels'].tolist())
 
-    @property
     def working_arr(self):
+        return self._extract_working_arr()
+
+    def _extract_working_arr(self):
         if isinstance(staged.state[0], list):
             arr_list = []
             for st in staged.state:
@@ -232,34 +261,140 @@ class Site(object):
 
     def _operate(self, operations):
         for op in operations:
-            op(self.working_arr)
+            op(self.working_arr())
         self.save()
 
-    def add_prop(self, new_label):
+
+class Site(BaseSite):
+    def call_prop_ops(self, op, propid, *args, **kwargs):
+        if op.func.__module__ == 'ops_bool':
+            bool_arr = op(self.working_arr(), *args, **kwargs)
+            self.arr.prop[bool_arr] = propid
+        if op.func.__module__ == 'ops_plotter':
+            op(self.working_arr(propid), *args, **kwargs)
+
+    def mark_prop_nan(self, propid):
+        self.arr[:, self.arr.prop == propid] = np.nan
+
+    def _add_null_field(self, new_label):
         zero_arr = np.expand_dims(np.zeros(self.arr[0, :, :].shape), axis=0)
         new_arr = np.concatenate([self.arr, zero_arr], axis=0)
         self.save(arr=new_arr, labels=self.arr.labels.append(new_label))
         staged.name = None
 
+    def prop_arr(self, propid):
+        new_arr = self.arr[:, (self.arr.prop == propid).any(axis=1), :]
+        return cell_array(new_arr, self.arr.labels)
+
+    def translate_prop_to_arr(self, new_label):
+        self._add_null_field(new_label)
+        self.arr[new_label] = self.arr.prop
+
+    @staticmethod
+    def _read_arr(path):
+        file_obj = np.load(path)
+        return cell_array(file_obj['data'], file_obj['labels'].tolist())
+
+    def drop_cells(self, propid, _any=False):
+        '''Drop cells.
+        '''
+        if not _any:
+            bool_ind = -(self.arr.prop == propid).all(axis=1)
+        if _any:
+            bool_ind = -(self.arr.prop == propid).any(axis=1)
+        new_arr = self.arr[:, bool_ind, :]
+        new_arr.labels = self.arr.labels
+        staged.arr = new_arr
+
+    def working_arr(self, propid=None):
+        arr = self._extract_working_arr()
+        if not propid:
+            return arr
+        if propid:
+            return arr[(self.arr.prop == propid).any(axis=1), :]
+
+
+class DataHolder(object):
+    def __init__(self, arr, labels):
+        self.arr = arr
+        self.labels = labels
+
+    def __getitem__(self, item):
+        if isinstance(item, str):
+            lis = [n for n, i in enumerate(self.labels) if i[0] == item]
+        elif isinstance(item, tuple):
+            lis = [n for n, i in enumerate(self.labels) if i[:len(item)] == item]
+        if len(lis) == 1:
+            return self.arr[lis[0], :, :]
+        else:
+            return self.arr[slice(min(lis), max(lis), None)]
+
+
+
+
 
 if __name__ == '__main__':
-    parent_folder = '/Users/kudo/gdrive/GitHub/covertrace/data'
+    parent_folder = '/Users/kudo/gdrive/GitHub/covertrace/data/Pos005'
     sub_folders = ['Pos005', 'Pos007', 'Pos008']
     conditions = ['IL1B', 'IL1B', 'LPS']
-    aa = Site(parent_folder, 'arr.npz')
-    bund = Bundle(parent_folder, sub_folders, conditions, file_name='arr.npz')
-    # bund.state = ['cytoplasm', 'DAPI', 'area']
-    bund.staged.state = ['cytoplasm', 'DAPI', 'area']
-    print bund.sites.Pos005.working_arr.shape
-    bund.staged.state = ['nuclei', 'DAPI']
-    print bund.sites.Pos005.working_arr.shape
-    bund.staged.state = [['nuclei', 'DAPI'], ['cytoplasm', 'DAPI','area']]
-    print bund.sites.Pos005.working_arr[0].shape, bund.sites.Pos005.working_arr[1].shape
-    bund.staged.state = [None]
-    print bund.sites.Pos005.working_arr.shape
-    bund.staged.state = ['cytoplasm', 'DAPI', 'area']
-    print bund.sites.Pos005.working_arr.shape
+    site = Site(parent_folder, 'arr.npz')
+    # print site.prop_arr(propid=0).shape
+
+
+    from itertools import product
+    obj = ['nuclei', 'cytoplasm']
+    ch = ['DAPI', 'YFP']
+    prop = ['area', 'mean_intensity', 'min_intensity']
+    labels = [i for i in product(obj, ch, prop)]
+    data = np.zeros((len(labels), 10, 5)) # 10 cells, 5 frames
+    data[:, :, 1:] = 10
+
+    dh = DataHolder(data, labels)
+    print dh['nuclei'].shape
+    print dh['nuclei', 'DAPI'].shape
+    print dh['cytoplasm', 'DAPI', 'area'].shape
+    dh['cytoplasm', 'DAPI', 'area'][5, 2] = np.Inf
+    print dh.data
+
+
+    # site.arr.prop = np.random.random(site.arr.cytoplasm.DAPI.area.shape)<0.05
+    # print site.arr[:, cellmap.all(axis=1), :].shape
+    # print site.arr[:, -cellmap.all(axis=1), :].shape
+    # print site.prop_arr(propid=1).shape
+    # import ops_bool
+    # from functools import partial
+    # staged.state = ['cytoplasm', 'DAPI', 'median_intensity']
+    # op = partial(ops_bool.filter_frames_by_range, LOWER=10)
+    # site.call_prop_ops(op, 1)
+    # print site.prop_arr(1).shape
+    # print site.prop_arr(0).shape
+    # # site.arr.prop[(site.arr.prop==1).any(axis=1), :] = 1
+    #
+    # site.drop_cells(propid=1, _any=False)
+    # print site.arr.shape
+    # site.drop_cells(propid=1, _any=True)
+    # print site.arr.shape
+    # # print site.arr.prop
+    # import ops_plotter
+    # func = partial(ops_plotter.plot_all, logy=True)
+    # site.call_prop_ops(func, 0)
+    # plt.show()
+    # # print site.arr.prop
+    # # import ipdb;ipdb.set_trace()
+    # # print site.cell_arr(cellmap=0).shape
+    # # print site.cell_arr(cellmap=1).shape
+    # # bund = Bundle(parent_folder, sub_folders, conditions, file_name='arr.npz')
+    # # # bund.state = ['cytoplasm', 'DAPI', 'area']
+    # # bund.staged.state = ['cytoplasm', 'DAPI', 'area']
+    # # print bund.sites.Pos005.working_arr.shape
+    # # bund.staged.state = ['nuclei', 'DAPI']
+    # # print bund.sites.Pos005.working_arr.shape
+    # # bund.staged.state = [['nuclei', 'DAPI'], ['cytoplasm', 'DAPI','area']]
+    # # print bund.sites.Pos005.working_arr[0].shape, bund.sites.Pos005.working_arr[1].shape
+    # bund.staged.state = [None]
+    # print bund.sites.Pos005.working_arr.shape
+    # bund.staged.state = ['cytoplasm', 'DAPI', 'area']
+    # print bund.sites.Pos005.working_arr.shape
     # bund.merge_conditions()
     # tt = Bundle(parent_folder, sub_folders)
-    from ops_plotter import plot_all
-    plot_all(bund.sites.Pos005.working_arr)
+    # plot_all(bund.sites.Pos005.working_arr)
