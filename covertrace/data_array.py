@@ -8,19 +8,18 @@ staged.state: A list to slice staged.arr into working_arr.
 
 from __future__ import division
 from os.path import join, basename, exists
-from itertools import izip, izip_longest
+from itertools import izip, izip_longest, product
 import pickle
 import os
 import matplotlib.pyplot as plt
 import numpy as np
-
-
+from utils.datatype_handling import sort_labels_and_arr
 
 
 class Stage(object):
     name = None
-    arr = None
     state = None
+    dataholder = None
     new_file_name = 'arr_modified.npz'
 
 staged = Stage()
@@ -33,79 +32,6 @@ state = [['nuclei', 'FITC', 'area'], ['cytoplasm', 'FITC', 'area']]
 '''
 
 
-class data_array(np.ndarray):
-    '''for 3d.
-    '''
-
-    def __new__(cls, data, labels=[]):
-        # Sort index and data.
-
-        if isinstance(labels, np.ndarray):
-            labels = labels.tolist()
-        sort_func = lambda x: (x[1][0], x[1][1], x[1][2])  # works with enumerate
-        sort_idx = [i[0] for i in sorted(enumerate(labels), key=sort_func)]
-        data = data[sort_idx, :, :]
-        labels = [labels[i] for i in sort_idx]
-
-        obj = np.asarray(data).view(cls)
-
-        if labels:
-            obj.labels = labels
-        return obj
-
-    def __getitem__(self, item):
-        if isinstance(item, str):
-            item = [n for n, i in enumerate(self.labels) if item == i[0]]
-            if len(item) == 1 and isinstance(item, list):
-                item = item[0]
-            else:
-                item = slice(min(item), max(item), None)
-        ret = super(data_array, self).__getitem__(item)
-
-        if hasattr(self, 'labels'):
-            if isinstance(item, slice):
-                ret.labels = [i[1:] for i in self.labels[item]]
-        return ret
-
-    def __dir__(self):
-        return list(set([i[0] for i in self.labels]))
-
-    def __getattr__(self, key):
-        if hasattr(self, 'labels'):
-            if self.labels:
-                if key in set([i[0] for i in self.labels]):
-                    return self[key]
-        else:
-            return super(data_array, self).__getattr__(key)
-
-
-class cell_array(data_array):
-    def __new__(cls, data, labels=[]):
-        # Sort index and data.
-
-        if isinstance(labels, np.ndarray):
-            labels = labels.tolist()
-        sort_func = lambda x: (x[1][0], x[1][1], x[1][2])  # works with enumerate
-        single_label_idx = [a for a, aa in enumerate(labels) if len(aa) == 1]
-        multi_labels = [a for a in labels if len(a) == 3]
-        sort_idx = [i[0] + len(single_label_idx) for i in sorted(enumerate(multi_labels), key=sort_func)]
-        for num, i in enumerate(single_label_idx):
-            sort_idx.insert(i, num)
-        data = data[sort_idx, :, :]
-        labels = [labels[i] for i in sort_idx]
-
-        if 'prop' not in labels:
-            zero_arr = np.expand_dims(np.zeros(data[0, :, :].shape), axis=0)
-            data = np.concatenate([zero_arr, data], axis=0)
-            labels.insert(0, ['prop'])
-
-        obj = np.asarray(data).view(cls)
-
-        if labels:
-            obj.labels = labels
-        return obj
-
-
 class Bundle(object):
     def __init__(self, parent_folder, subfolders=None, conditions=[], file_name='arr.npz'):
         parent_folder = parent_folder.rstrip('/')
@@ -116,13 +42,11 @@ class Bundle(object):
             self.sites = Sites(folders, file_name, conditions)
         self.staged = staged
 
-    def propagate(self, operations):
+    def propagate(self, operation, *args, **kwargs):
         """Propagate operations to all the sites.
-        operations: wrapper from arr_operations
+        operation: partial functionss
         """
-        if not isinstance(operations, list):
-            operations = [operations, ]
-        self.sites._propagate_each(operations)
+        self.sites._propagate_each(operation, *args, **kwargs)
 
     def plotter(self, operation, fig=None, ax=None):
         # FIXME: subplots shape... how to determine?
@@ -161,9 +85,32 @@ class Sites(object):
             yield getattr(self, sites_name[__num_keys])
             __num_keys += 1
 
-    def _propagate_each(self, operations):
-        for site in self:
-            site._operate(operations)
+    def _propagate_each(self, operation, *args, **kwargs):
+        if operation.func.__module__ == 'ops_plotter':
+            self._plotter(operation)
+
+    def _plotter(self, operation, *args, **kwargs):
+        fig, axes = self._make_fig_axes(len(self._collect()))
+        for data, ax in zip(self._collect(), axes):
+            if data['arr'].any():
+                operation(data['arr'], ax)
+                ax.set_title('{0}\n{1}/{2}/{3}, prop={4}'.format(*[data['name']] + data['labels'] + [data['prop']]))
+
+    def _collect(self):
+        panels = [site.data.work_prop for site in self]
+        return [i for j in panels for i in j]
+
+    def _each_site(self, site, operation, *args, **kwargs):
+        pass
+
+    def _make_fig_axes(self, num_axes):
+        fig, axes = plt.subplots(1, num_axes, figsize=(15, 5))
+        plt.tight_layout(pad=2, w_pad=0.5, h_pad=2.0)
+        try:
+            axes = axes.flatten()
+        except:
+            axes = [axes, ]
+        return fig, axes
 
     def _delete_file(self, file_name):
         for site in self:
@@ -182,14 +129,14 @@ class Sites(object):
         site.save(arr=new_arr)
         [delattr(self, s_name) for s_name in sites_name[1:]]
 
-    def _plotter(self, operation, fig, axes=None):
-        try:
-            axes = axes.flatten()
-        except:
-            axes = [axes, ]
-        for site, ax in izip(self, axes):
-            site._plot(operation, ax)
-            ax.set_title(site.name)
+    # def _plotter(self, operation, fig, axes=None):
+    #     try:
+    #         axes = axes.flatten()
+    #     except:
+    #         axes = [axes, ]
+    #     for site, ax in izip(self, axes):
+    #         site._plot(operation, ax)
+    #         ax.set_title(site.name)
 
     def __len__(self):
         return len([num for num, i in enumerate(self)])
@@ -197,7 +144,7 @@ class Sites(object):
 
 
 
-class BaseSite(object):
+class Site(object):
     """name: equivalent to attribute name of Sites
     """
     merged = 0
@@ -209,117 +156,70 @@ class BaseSite(object):
         self.name = basename(directory)
 
     @property
-    def arr(self):
+    def data(self):
         if not self.name == staged.name:
             staged.name = self.name
-            staged.arr = self._read_arr(join(self.directory, self.file_name))
-        return staged.arr
+            staged.dataholder = self._read_arr(join(self.directory, self.file_name))
+        return staged.dataholder
 
-    @staticmethod
-    def _read_arr(path):
+    def _read_arr(self, path):
         file_obj = np.load(path)
-        return data_array(file_obj['data'], file_obj['labels'].tolist())
+        return DataHolder(file_obj['data'], file_obj['labels'].tolist(), self.name)
 
-    def working_arr(self):
-        return self._extract_working_arr()
-
-    def _extract_working_arr(self):
-        if isinstance(staged.state[0], list):
-            arr_list = []
-            for st in staged.state:
-                arr_list.append(self._retrieve_working_arr(self.arr, st))
-            return arr_list
-        if isinstance(staged.state[0], str):
-            return self._retrieve_working_arr(self.arr, staged.state)
-        else:
-            return self.arr
-
-    @staticmethod
-    def _retrieve_working_arr(arr, st):
-        for num, s in enumerate(st):
-            if num == 0:
-                ret = arr[s]
-            else:
-                ret = ret[s]
-        return ret
-
-    def save(self, arr=[], labels=[]):
-        dic_save = {}
+    def save(self, arr=[], labels=[], new_file_name=None):
         if not len(arr):
-            arr = self.arr
-        dic_save['data'] = arr
+            arr = self.data.arr
         if not labels:
-            labels = self.arr.labels
-        dic_save['labels'] = labels
-        np.savez_compressed(join(self.directory, staged.new_file_name), **dic_save)
+            labels = self.data.labels
+        new_file_name = staged.new_file_name if not new_file_name else new_file_name
+        dic_save = {'data': arr, 'labels': labels}
+        np.savez_compressed(join(self.directory, new_file_name), **dic_save)
         self.file_name = staged.new_file_name
         print '\r'+'{0}: file_name is updated to {1}'.format(self.name, self.file_name),
 
-    def _delete_file(self, arr, file_name):
-        if exists(join(self.directory, file_name)):
-            os.remove(join(self.directory, file_name))
-
-    def _operate(self, operations):
-        for op in operations:
-            op(self.working_arr())
+    def operate(self, operation, ax=None):
+        operation(self.data.working_arr)
         self.save()
 
-
-class Site(BaseSite):
-    def call_prop_ops(self, op, propid, *args, **kwargs):
+    def call_prop_ops(self, op, idt, *args, **kwargs):
         if op.func.__module__ == 'ops_bool':
             bool_arr = op(self.working_arr(), *args, **kwargs)
-            self.arr.prop[bool_arr] = propid
+            self.data.prop[bool_arr] = idt
         if op.func.__module__ == 'ops_plotter':
-            op(self.working_arr(propid), *args, **kwargs)
-
-    def mark_prop_nan(self, propid):
-        self.arr[:, self.arr.prop == propid] = np.nan
-
-    def _add_null_field(self, new_label):
-        zero_arr = np.expand_dims(np.zeros(self.arr[0, :, :].shape), axis=0)
-        new_arr = np.concatenate([self.arr, zero_arr], axis=0)
-        self.save(arr=new_arr, labels=self.arr.labels.append(new_label))
-        staged.name = None
-
-    def prop_arr(self, propid):
-        new_arr = self.arr[:, (self.arr.prop == propid).any(axis=1), :]
-        return cell_array(new_arr, self.arr.labels)
-
-    def translate_prop_to_arr(self, new_label):
-        self._add_null_field(new_label)
-        self.arr[new_label] = self.arr.prop
-
-    @staticmethod
-    def _read_arr(path):
-        file_obj = np.load(path)
-        return cell_array(file_obj['data'], file_obj['labels'].tolist())
-
-    def drop_cells(self, propid, _any=False):
-        '''Drop cells.
-        '''
-        if not _any:
-            bool_ind = -(self.arr.prop == propid).all(axis=1)
-        if _any:
-            bool_ind = -(self.arr.prop == propid).any(axis=1)
-        new_arr = self.arr[:, bool_ind, :]
-        new_arr.labels = self.arr.labels
-        staged.arr = new_arr
-
-    def working_arr(self, propid=None):
-        arr = self._extract_working_arr()
-        if not propid:
-            return arr
-        if propid:
-            return arr[(self.arr.prop == propid).any(axis=1), :]
+            op(self.data.prop_arr(idt), *args, **kwargs)
 
 
 class DataHolder(object):
-    def __init__(self, arr, labels):
+    '''
+    >>> labels = [i for i in product(['nuc', 'cyto'], ['CFP', 'YFP'], ['x', 'y'])]
+    >>> arr = np.zeros((len(labels), 10, 5))
+    >>> print DataHolder(arr, labels)['nuc'].shape
+    (4, 10, 5)
+    >>> print DataHolder(arr, labels)['cyto', 'CFP'].shape
+    (2, 10, 5)
+    >>> print DataHolder(arr, labels)['nuc', 'CFP', 'x'].shape
+    (10, 5)
+    '''
+    def __init__(self, arr, labels, name=None):
+        labels, arr = sort_labels_and_arr(labels, arr)
+
+        if not [i for i in labels if 'prop' in i]:
+            zero_arr = np.expand_dims(np.zeros(arr[0, :, :].shape), axis=0)
+            arr = np.concatenate([zero_arr, arr], axis=0)
+            labels.insert(0, ['prop'])
+
+        labels = [tuple(i) for i in labels]
         self.arr = arr
         self.labels = labels
+        self.name = name
+
+    @property
+    def prop(self):
+        '''Returns 2D slice of data, prop. '''
+        return self['prop']
 
     def __getitem__(self, item):
+        '''Enables dict-like behavior to extract 3D or 2D slice of arr.'''
         if isinstance(item, str):
             lis = [n for n, i in enumerate(self.labels) if i[0] == item]
         elif isinstance(item, tuple):
@@ -327,8 +227,73 @@ class DataHolder(object):
         if len(lis) == 1:
             return self.arr[lis[0], :, :]
         else:
-            return self.arr[slice(min(lis), max(lis), None)]
+            return self.arr[min(lis):max(lis)+1, :, :]
 
+    @property
+    def work_arr(self):
+        '''If staged.state is a list of lists, return a list of arr.
+        If staged.state is a single list, return 2D or 3D numpy array.
+        '''
+        if isinstance(staged.state[0], list):
+            arr_list = []
+            for st in staged.state:
+                arr_list.append(self.__getitem__(tuple(st)))
+                return arr_list
+        elif isinstance(staged.state[0], str):
+            return self.__getitem__(tuple(staged.state))
+        else:
+            return self.arr
+
+    @property
+    def work_prop(self):
+        '''Return a list of dict containing array sliced by prop value.'''
+        ret = []
+        if isinstance(staged.state[0], str):
+            work_arr = [self.work_arr, ]
+            state = [staged.state, ]
+        else:
+            work_arr = self.work_arr
+            state = staged.state
+        prop_set = np.unique(self['prop'])
+        for num, warr in enumerate(work_arr):
+            for pi in prop_set:
+                ret.append(dict(arr=self.prop_idx(warr, self.prop, idt=pi),
+                                name=self.name, prop=int(pi), labels=state[num]))
+        return ret
+
+    @staticmethod
+    def prop_idx(arr, prop, idt=None, _any=False):
+        if not _any:
+            bool_ind = (prop == idt).all(axis=1)
+        if _any:
+            bool_ind = (prop == idt).any(axis=1)
+        return np.take(arr, np.where(bool_ind)[0], axis=-2)
+
+    def mark_prop_nan(self, idt):
+        self.arr[:, self.prop == idt] = np.nan
+
+    def _add_null_field(self, new_label):
+        new_label = list(new_label) if isinstance(new_label, str) else new_label
+        zero_arr = np.expand_dims(np.zeros(self.arr[0, :, :].shape), axis=0)
+        self.arr = np.concatenate([self.arr, zero_arr], axis=0)
+        self.labels.append(tuple(new_label))
+
+    def translate_prop_to_arr(self, new_label):
+        self._add_null_field(new_label)
+        self.arr[new_label] = self.prop.copy()
+
+    def drop_cells(self, propid, _any=False):
+        '''Drop cells.
+        '''
+        if not _any:
+            bool_ind = -(self.prop == propid).all(axis=1)
+        if _any:
+            bool_ind = -(self.prop == propid).any(axis=1)
+        self.arr = self.arr[:, bool_ind, :]
+
+    def visit(self, visitor):
+        '''visitor pattern.'''
+        visitor(self)
 
 
 
@@ -340,61 +305,32 @@ if __name__ == '__main__':
     site = Site(parent_folder, 'arr.npz')
     # print site.prop_arr(propid=0).shape
 
-
     from itertools import product
     obj = ['nuclei', 'cytoplasm']
-    ch = ['DAPI', 'YFP']
-    prop = ['area', 'mean_intensity', 'min_intensity']
+    ch = ['DAPI']
+    prop = ['area', 'x']
     labels = [i for i in product(obj, ch, prop)]
     data = np.zeros((len(labels), 10, 5)) # 10 cells, 5 frames
     data[:, :, 1:] = 10
 
     dh = DataHolder(data, labels)
-    print dh['nuclei'].shape
-    print dh['nuclei', 'DAPI'].shape
-    print dh['cytoplasm', 'DAPI', 'area'].shape
     dh['cytoplasm', 'DAPI', 'area'][5, 2] = np.Inf
-    print dh.data
-
-
-    # site.arr.prop = np.random.random(site.arr.cytoplasm.DAPI.area.shape)<0.05
-    # print site.arr[:, cellmap.all(axis=1), :].shape
-    # print site.arr[:, -cellmap.all(axis=1), :].shape
-    # print site.prop_arr(propid=1).shape
-    # import ops_bool
-    # from functools import partial
-    # staged.state = ['cytoplasm', 'DAPI', 'median_intensity']
-    # op = partial(ops_bool.filter_frames_by_range, LOWER=10)
-    # site.call_prop_ops(op, 1)
-    # print site.prop_arr(1).shape
-    # print site.prop_arr(0).shape
-    # # site.arr.prop[(site.arr.prop==1).any(axis=1), :] = 1
+    staged.state = ['cytoplasm', 'DAPI', 'area']
+    # staged.state = [['cytoplasm', 'DAPI', 'area'], ['nuclei', 'DAPI']]
+    # print site.data.arr.shape
     #
-    # site.drop_cells(propid=1, _any=False)
-    # print site.arr.shape
-    # site.drop_cells(propid=1, _any=True)
-    # print site.arr.shape
-    # # print site.arr.prop
-    # import ops_plotter
-    # func = partial(ops_plotter.plot_all, logy=True)
-    # site.call_prop_ops(func, 0)
-    # plt.show()
-    # # print site.arr.prop
-    # # import ipdb;ipdb.set_trace()
-    # # print site.cell_arr(cellmap=0).shape
-    # # print site.cell_arr(cellmap=1).shape
-    # # bund = Bundle(parent_folder, sub_folders, conditions, file_name='arr.npz')
-    # # # bund.state = ['cytoplasm', 'DAPI', 'area']
-    # # bund.staged.state = ['cytoplasm', 'DAPI', 'area']
-    # # print bund.sites.Pos005.working_arr.shape
-    # # bund.staged.state = ['nuclei', 'DAPI']
-    # # print bund.sites.Pos005.working_arr.shape
-    # # bund.staged.state = [['nuclei', 'DAPI'], ['cytoplasm', 'DAPI','area']]
-    # # print bund.sites.Pos005.working_arr[0].shape, bund.sites.Pos005.working_arr[1].shape
-    # bund.staged.state = [None]
-    # print bund.sites.Pos005.working_arr.shape
-    # bund.staged.state = ['cytoplasm', 'DAPI', 'area']
-    # print bund.sites.Pos005.working_arr.shape
-    # bund.merge_conditions()
-    # tt = Bundle(parent_folder, sub_folders)
-    # plot_all(bund.sites.Pos005.working_arr)
+    # site.data._add_null_field(['test'])
+    # print site.data.arr.shape
+    # print site.data['test'].shape
+
+    import ops_plotter
+    from functools import partial
+
+    parent_folder = '/Users/kudo/gdrive/GitHub/covertrace/data/'
+
+    bund = Bundle(parent_folder, sub_folders, conditions)
+    bund.sites.Pos005.data['prop'][5, :] = 2
+    bund.sites.Pos005.save()
+    func = partial(ops_plotter.plot_all)
+    bund.propagate(func)
+    plt.show()
