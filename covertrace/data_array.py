@@ -20,6 +20,7 @@ class Stage(object):
     name = None
     state = None
     dataholder = None
+    _any = True
     new_file_name = 'arr_modified.npz'
 
 staged = Stage()
@@ -31,80 +32,25 @@ state = ['nuclei', 'FITC', 'area']
 state = [['nuclei', 'FITC', 'area'], ['cytoplasm', 'FITC', 'area']]
 '''
 
+class Plotter(object):
+    def __init__(self, slice_prop, operation):
+        self.slice_prop = slice_prop
+        self.operation = operation
 
-class Bundle(object):
-    def __init__(self, parent_folder, subfolders=None, conditions=[], file_name='arr.npz'):
-        parent_folder = parent_folder.rstrip('/')
-        if subfolders is None:
-            self.sites = Sites([parent_folder, ], file_name, [conditions, ])
-        else:
-            folders = [join(parent_folder, i) for i in subfolders]
-            self.sites = Sites(folders, file_name, conditions)
-        self.staged = staged
-
-    def propagate(self, operation, *args, **kwargs):
-        """Propagate operations to all the sites.
-        operation: partial functionss
-        """
-        self.sites._propagate_each(operation, *args, **kwargs)
-
-    def plotter(self, operation, fig=None, ax=None):
-        # FIXME: subplots shape... how to determine?
-        if fig is None:
-            fig, axes = plt.subplots(1, len(self.sites), figsize=(15, 5))
-            plt.tight_layout(pad=0.5)
-        self.sites._plotter(operation, fig, axes)
-
-    def merge_conditions(self):
-        """Merge dataframe by conditions.
-        Sites name will be also changed to conditions.
-        """
-        set_conditions = set([i.condition for i in self.sites])
-        store_name = []
-        store_condition = []
-        for sc in set_conditions:
-            store_name.append([i.name for i in self.sites if i.condition is sc])
-            store_condition.append([i.condition for i in self.sites if i.condition is sc])
-        for name, cond in zip(store_name, store_condition):
-            self.sites._merge_sites(sites_name=name, condition_name=cond)
-
-    def save(self, file_name):
-        pickle.dump(self, open('{0}.pkl'.format(file_name), 'w'))
-
-
-
-class Sites(object):
-    def __init__(self, folders, file_name, conditions=[]):
-        for folder, condition in izip_longest(folders, conditions):
-            setattr(self, basename(folder), Site(folder, file_name, condition))
-
-    def __iter__(self):
-        __num_keys = 0
-        sites_name = sorted(self.__dict__.keys())
-        while len(sites_name) > __num_keys:
-            yield getattr(self, sites_name[__num_keys])
-            __num_keys += 1
-
-    def _propagate_each(self, operation, *args, **kwargs):
-        if operation.func.__module__ == 'ops_plotter':
-            self._plotter(operation)
+    def plot(self):
+        fig, axes = self._plotter(self.operation)
+        return fig, axes
 
     def _plotter(self, operation, *args, **kwargs):
-        fig, axes = self._make_fig_axes(len(self._collect()))
-        for data, ax in zip(self._collect(), axes):
+        fig, axes = self._make_fig_axes(len(self.slice_prop))
+        for data, ax in zip(self.slice_prop, axes):
             if data['arr'].any():
                 operation(data['arr'], ax)
-                ax.set_title('{0}\n{1}/{2}/{3}, prop={4}'.format(*[data['name']] + data['labels'] + [data['prop']]))
-
-    def _collect(self):
-        panels = [site.data.work_prop for site in self]
-        return [i for j in panels for i in j]
-
-    def _each_site(self, site, operation, *args, **kwargs):
-        pass
+                ax.set_title('{0}\n{1}/{2}/{3},\nprop={4}'.format(*[data['name']] + data['labels'] + [data['prop']]))
+        return fig, axes
 
     def _make_fig_axes(self, num_axes):
-        fig, axes = plt.subplots(1, num_axes, figsize=(15, 5))
+        fig, axes = plt.subplots(1, num_axes, figsize=(15, 5), sharey=True)
         plt.tight_layout(pad=2, w_pad=0.5, h_pad=2.0)
         try:
             axes = axes.flatten()
@@ -112,36 +58,66 @@ class Sites(object):
             axes = [axes, ]
         return fig, axes
 
-    def _delete_file(self, file_name):
-        for site in self:
-            site._delete_file(file_name)
 
-    def _merge_sites(self, sites_name, file_name, condition_name=None):
+class Sites(object):
+    def __init__(self, parent_folder, subfolders=None, conditions=[], file_name='arr.npz'):
+        parent_folder = parent_folder.rstrip('/')
+        if subfolders is None:
+            folders, conditions = [parent_folder, ], [conditions, ]
+        else:
+            folders = [join(parent_folder, i) for i in subfolders]
+        for folder, condition in izip_longest(folders, conditions):
+            setattr(self, basename(folder), Site(folder, file_name, condition))
+        self.staged = staged
+
+    def __iter__(self):
+        __num_keys = 0
+        sites_name = sorted(self.__dict__.keys())
+        sites_name.remove('staged')
+        while len(sites_name) > __num_keys:
+            yield getattr(self, sites_name[__num_keys])
+            __num_keys += 1
+
+    def propagate(self, operation, pid=None, *args, **kwargs):
+        if 'ops_plotter' in operation.func.__module__:
+            plotter = Plotter(self.collect(), operation)
+            fig, axes = plotter.plot()
+            return fig, axes
+        else:
+            for site in self:
+                site.operate(operation, pid=pid)
+
+    def collect(self):
+        panels = [site.data.slice_prop for site in self]
+        return [i for j in panels for i in j]
+
+    def drop_prop(self, pid):
+        for site in self:
+            site._drop_prop(pid)
+
+    def merge_conditions(self):
+        """Merge dataframe by conditions.
+        Sites name will be also changed to conditions.
+        """
+        set_cond = set([i.condition for i in self])
+        group_by_cond = [[i.name for i in self if i.condition == sc] for sc in set_cond]
+        for name_list in group_by_cond:
+            self._merge_sites(sites_name=name_list)
+
+    def _merge_sites(self, sites_name):
         """merge dataframe.
         - sites_name: a list of sites_name. e.g. ['A0', 'A1', 'A2']
-        - file_name: a string of file_name to save
         Once implemeneted, data is saved only in the first component of
         the sites_name. The rest of attributes will be removed.
         """
         site = getattr(self, sites_name[0])
-        arrs = [getattr(self, s_name).arr for s_name in sites_name]
+        arrs = [getattr(self, s_name).data.arr for s_name in sites_name]
         new_arr = np.concatenate(arrs, axis=1)
         site.save(arr=new_arr)
         [delattr(self, s_name) for s_name in sites_name[1:]]
 
-    # def _plotter(self, operation, fig, axes=None):
-    #     try:
-    #         axes = axes.flatten()
-    #     except:
-    #         axes = [axes, ]
-    #     for site, ax in izip(self, axes):
-    #         site._plot(operation, ax)
-    #         ax.set_title(site.name)
-
     def __len__(self):
         return len([num for num, i in enumerate(self)])
-
-
 
 
 class Site(object):
@@ -175,19 +151,18 @@ class Site(object):
         dic_save = {'data': arr, 'labels': labels}
         np.savez_compressed(join(self.directory, new_file_name), **dic_save)
         self.file_name = staged.new_file_name
+        staged.name = None
         print '\r'+'{0}: file_name is updated to {1}'.format(self.name, self.file_name),
 
-    def operate(self, operation, ax=None):
-        operation(self.data.working_arr)
+    def operate(self, operation, pid, ax=None):
+        if 'ops_bool' in operation.func.__module__:
+            bool_arr = operation(self.data.slice_arr)
+            self.data.prop[bool_arr] = pid
         self.save()
 
-    def call_prop_ops(self, op, idt, *args, **kwargs):
-        if op.func.__module__ == 'ops_bool':
-            bool_arr = op(self.working_arr(), *args, **kwargs)
-            self.data.prop[bool_arr] = idt
-        if op.func.__module__ == 'ops_plotter':
-            op(self.data.prop_arr(idt), *args, **kwargs)
-
+    def _drop_prop(self, pid):
+        self.data.drop_cells(pid)
+        self.save()
 
 class DataHolder(object):
     '''
@@ -230,7 +205,7 @@ class DataHolder(object):
             return self.arr[min(lis):max(lis)+1, :, :]
 
     @property
-    def work_arr(self):
+    def slice_arr(self):
         '''If staged.state is a list of lists, return a list of arr.
         If staged.state is a single list, return 2D or 3D numpy array.
         '''
@@ -245,32 +220,34 @@ class DataHolder(object):
             return self.arr
 
     @property
-    def work_prop(self):
+    def slice_prop(self):
         '''Return a list of dict containing array sliced by prop value.'''
         ret = []
         if isinstance(staged.state[0], str):
-            work_arr = [self.work_arr, ]
+            slice_arr = [self.slice_arr, ]
             state = [staged.state, ]
         else:
-            work_arr = self.work_arr
+            slice_arr = self.slice_arr
             state = staged.state
         prop_set = np.unique(self['prop'])
-        for num, warr in enumerate(work_arr):
+        for num, warr in enumerate(slice_arr):
             for pi in prop_set:
-                ret.append(dict(arr=self.prop_idx(warr, self.prop, idt=pi),
+                ret.append(dict(arr=self.extract_prop_slice(warr, self.prop, pid=pi),
                                 name=self.name, prop=int(pi), labels=state[num]))
         return ret
 
-    @staticmethod
-    def prop_idx(arr, prop, idt=None, _any=False):
-        if not _any:
-            bool_ind = (prop == idt).all(axis=1)
-        if _any:
-            bool_ind = (prop == idt).any(axis=1)
+    @classmethod
+    def extract_prop_slice(cls, arr, prop, pid=None):
+        bool_ind = cls.retrieve_bool_ind(prop, pid)
         return np.take(arr, np.where(bool_ind)[0], axis=-2)
 
-    def mark_prop_nan(self, idt):
-        self.arr[:, self.prop == idt] = np.nan
+    @staticmethod
+    def retrieve_bool_ind(prop, pid):
+        func = np.any if staged._any else np.all
+        return func(prop == pid, axis=1)
+
+    def mark_prop_nan(self, pid):
+        self.arr[:, self.prop == pid] = np.nan
 
     def _add_null_field(self, new_label):
         new_label = list(new_label) if isinstance(new_label, str) else new_label
@@ -282,20 +259,15 @@ class DataHolder(object):
         self._add_null_field(new_label)
         self.arr[new_label] = self.prop.copy()
 
-    def drop_cells(self, propid, _any=False):
+    def drop_cells(self, pid):
         '''Drop cells.
         '''
-        if not _any:
-            bool_ind = -(self.prop == propid).all(axis=1)
-        if _any:
-            bool_ind = -(self.prop == propid).any(axis=1)
-        self.arr = self.arr[:, bool_ind, :]
+        bool_ind = self.retrieve_bool_ind(self.prop, pid)
+        self.arr = np.take(self.arr, np.where(-bool_ind)[0], axis=-2)
 
     def visit(self, visitor):
         '''visitor pattern.'''
         visitor(self)
-
-
 
 
 if __name__ == '__main__':
@@ -315,7 +287,8 @@ if __name__ == '__main__':
 
     dh = DataHolder(data, labels)
     dh['cytoplasm', 'DAPI', 'area'][5, 2] = np.Inf
-    staged.state = ['cytoplasm', 'DAPI', 'area']
+    staged.state = [['cytoplasm', 'DAPI', 'area'], ['nuclei', 'DAPI', 'area']]
+    dh.slice_arr
     # staged.state = [['cytoplasm', 'DAPI', 'area'], ['nuclei', 'DAPI']]
     # print site.data.arr.shape
     #
@@ -328,9 +301,10 @@ if __name__ == '__main__':
 
     parent_folder = '/Users/kudo/gdrive/GitHub/covertrace/data/'
 
-    bund = Bundle(parent_folder, sub_folders, conditions)
-    bund.sites.Pos005.data['prop'][5, :] = 2
-    bund.sites.Pos005.save()
+    sites = Sites(parent_folder, sub_folders, conditions)
+    import ipdb;ipdb.set_trace()
+    sites.Pos005.data['prop'][5, :] = 2
+    sites.Pos005.save()
     func = partial(ops_plotter.plot_all)
-    bund.propagate(func)
+    sites.propagate(func)
     plt.show()
