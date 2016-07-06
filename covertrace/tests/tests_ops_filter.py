@@ -19,8 +19,7 @@ obj = ['nuclei', 'cytoplasm']
 ch = ['DAPI', 'YFP']
 prop = ['area', 'mean_intensity', 'min_intensity']
 labels = [i for i in product(obj, ch, prop)]
-# 10 cells, 5 frames
-data = np.zeros((len(labels), 10, 5))
+data = np.zeros((len(labels), 10, 5)) # 10 cells, 5 frames
 data[:, :, 1:] = 10
 
 

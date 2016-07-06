@@ -14,6 +14,9 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 from utils.datatype_handling import sort_labels_and_arr
+import re
+from scipy.ndimage import imread
+from functools import partial
 
 
 class Stage(object):
@@ -78,7 +81,7 @@ class Sites(object):
             yield getattr(self, sites_name[__num_keys])
             __num_keys += 1
 
-    def propagate(self, operation, pid=None, *args, **kwargs):
+    def iterate(self, operation, pid=None, *args, **kwargs):
         if 'ops_plotter' in operation.func.__module__:
             plotter = Plotter(self.collect(), operation)
             fig, axes = plotter.plot()
@@ -91,13 +94,20 @@ class Sites(object):
         panels = [site.data.slice_prop for site in self]
         return [i for j in panels for i in j]
 
+    def propagate_prop(self, pid):
+        for site in self:
+            site._propagte_prop(pid)
+
     def drop_prop(self, pid):
         for site in self:
             site._drop_prop(pid)
 
+    def reset_prop(self):
+        for site in self:
+            site._reset_prop()
+
     def merge_conditions(self):
-        """Merge dataframe by conditions.
-        Sites name will be also changed to conditions.
+        """Merge sites if they have the same conditions.
         """
         set_cond = set([i.condition for i in self])
         group_by_cond = [[i.name for i in self if i.condition == sc] for sc in set_cond]
@@ -164,6 +174,51 @@ class Site(object):
         self.data.drop_cells(pid)
         self.save()
 
+    def _reset_prop(self):
+        self.data['prop'][:] = np.zeros(self.data.prop.shape)
+        self.save()
+
+    def _propagte_prop(self, pid):
+        prop = self.data['prop']
+        prop[(prop == pid).any(axis=1), :] = pid
+        self.save()
+
+    @property
+    def images(self):
+        objects = set([i[0] for i in self.data.labels if len(i) == 3])
+        channels = set([i[1] for i in self.data.labels if len(i) == 3])
+        return ImageHolder(self.directory, channels, objects)
+
+
+class ImageHolder(object):
+    def __init__(self, directory, channels, objects):
+        self.dir = directory
+        for ch in channels:
+            setattr(self, ch, partial(self.channels, ch=ch))
+        for ob in objects:
+            setattr(self, ob, partial(self.outlines, ob=ob))
+
+    def _retrieve_file_name_by_frame(self, subfolder, frame):
+        files = os.listdir(join(self.dir, subfolder))
+        refiles = [re.match('img_(?P<frame>[0-9]*)_', i) for i in files]
+        return [i.string for i in refiles if int(i.group('frame')) == 1]
+
+    def channels(self, frame, ch, rgb=False):
+        file_names = self._retrieve_file_name_by_frame('channels', frame)
+        ch_file_name = [i for i in file_names if ch in i][0]
+        img = imread(join(self.dir, 'channels', ch_file_name))
+        if rgb:
+            return np.moveaxis(np.tile(img, (3, 1, 1)), 0, 2)
+        else:
+            return img
+
+    def outlines(self, frame, ob):
+        file_names = self._retrieve_file_name_by_frame('outlines', frame)
+        obj_file_name = [i for i in file_names if ob in i][0]
+        return imread(join(self.dir, 'outlines', obj_file_name))
+
+
+
 class DataHolder(object):
     '''
     >>> labels = [i for i in product(['nuc', 'cyto'], ['CFP', 'YFP'], ['x', 'y'])]
@@ -213,7 +268,7 @@ class DataHolder(object):
             arr_list = []
             for st in staged.state:
                 arr_list.append(self.__getitem__(tuple(st)))
-                return arr_list
+            return arr_list
         elif isinstance(staged.state[0], str):
             return self.__getitem__(tuple(staged.state))
         else:
@@ -287,8 +342,6 @@ if __name__ == '__main__':
 
     dh = DataHolder(data, labels)
     dh['cytoplasm', 'DAPI', 'area'][5, 2] = np.Inf
-    staged.state = [['cytoplasm', 'DAPI', 'area'], ['nuclei', 'DAPI', 'area']]
-    dh.slice_arr
     # staged.state = [['cytoplasm', 'DAPI', 'area'], ['nuclei', 'DAPI']]
     # print site.data.arr.shape
     #
@@ -302,9 +355,7 @@ if __name__ == '__main__':
     parent_folder = '/Users/kudo/gdrive/GitHub/covertrace/data/'
 
     sites = Sites(parent_folder, sub_folders, conditions)
-    import ipdb;ipdb.set_trace()
     sites.Pos005.data['prop'][5, :] = 2
-    sites.Pos005.save()
-    func = partial(ops_plotter.plot_all)
-    sites.propagate(func)
-    plt.show()
+    sites.staged.state = [['cytoplasm', 'DAPI', 'area'], ['nuclei', 'DAPI', 'area']]
+    sites.collect()
+    print sites.Pos005.data.slice_arr.__len__()
