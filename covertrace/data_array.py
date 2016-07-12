@@ -1,8 +1,8 @@
 '''
 
-staged.arr: cached site.arr
-staged.name: cached name of site
-staged.state: A list to slice staged.arr into working_arr.
+
+Due to the memory issue, we do not want to load all the data at once.
+
 
 '''
 
@@ -17,6 +17,7 @@ from utils.datatype_handling import sort_labels_and_arr
 import re
 from scipy.ndimage import imread
 from functools import partial
+from image_vis import ImageVis
 
 
 class Stage(object):
@@ -72,6 +73,9 @@ class Sites(object):
         for folder, condition in izip_longest(folders, conditions):
             setattr(self, basename(folder), Site(folder, file_name, condition))
         self.staged = staged
+
+    def set_state(self, state):
+        self.staged.state = state
 
     def __iter__(self):
         __num_keys = 0
@@ -166,6 +170,7 @@ class Site(object):
 
     def operate(self, operation, pid, ax=None):
         if 'ops_bool' in operation.func.__module__:
+            # assign pid to cells based on bool_arr returned by operation
             bool_arr = operation(self.data.slice_arr)
             self.data.prop[bool_arr] = pid
         self.save()
@@ -194,16 +199,17 @@ class ImageHolder(object):
     def __init__(self, directory, channels, objects):
         self.dir = directory
         for ch in channels:
-            setattr(self, ch, partial(self.channels, ch=ch))
+            setattr(self, ch, partial(self._channels, ch=ch))
         for ob in objects:
             setattr(self, ob, partial(self.outlines, ob=ob))
+        self.visualize = ImageVis(self, staged.dataholder, staged.state)
 
     def _retrieve_file_name_by_frame(self, subfolder, frame):
         files = os.listdir(join(self.dir, subfolder))
         refiles = [re.match('img_(?P<frame>[0-9]*)_', i) for i in files]
-        return [i.string for i in refiles if int(i.group('frame')) == 1]
+        return [i.string for i in refiles if int(i.group('frame')) == frame]
 
-    def channels(self, frame, ch, rgb=False):
+    def _channels(self, frame, ch, rgb=False):
         file_names = self._retrieve_file_name_by_frame('channels', frame)
         ch_file_name = [i for i in file_names if ch in i][0]
         img = imread(join(self.dir, 'channels', ch_file_name))
@@ -252,7 +258,7 @@ class DataHolder(object):
         '''Enables dict-like behavior to extract 3D or 2D slice of arr.'''
         if isinstance(item, str):
             lis = [n for n, i in enumerate(self.labels) if i[0] == item]
-        elif isinstance(item, tuple):
+        elif isinstance(item, tuple) or isinstance(item, list):
             lis = [n for n, i in enumerate(self.labels) if i[:len(item)] == item]
         if len(lis) == 1:
             return self.arr[lis[0], :, :]

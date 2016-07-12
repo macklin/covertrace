@@ -18,66 +18,66 @@ def call_estimate_h_ki_kv(time, ts_ratio_all, inh_timing, k_v, x0=None):
         sim_store.append(sim)
     est_h, est_k_e, est_k_i = np.array(param_store).T
     return est_h.tolist(), est_k_e.tolist(), est_k_i.tolist(), np.array(sim_store)
-
-
-class Estimator_h_ki_kv_orig(object):
-    def __init__(self, time, ts_ratio, inh_timing, k_v, x0=None):
-        self.time = time
-        self.ts_ratio = ts_ratio
-        self.inh_timing = inh_timing
-        self.k_v = k_v
-        if not x0:
-            x0 = np.random.random(3)
-        self.x0 = x0
-        self.set_time_pre_post()
-
-    def set_time_pre_post(self):
-        self.time_pre = self.time[self.time <= self.inh_timing]
-        self.time_post = self.time[self.time > self.inh_timing]
-
-    def estimate(self):
-        store = []
-        for ts_cell in self.ts_ratio:
-            ret = self.estimate_imex_constants(ts_cell)
-            store.append(ret)
-        return store
-
-    def estimate_imex_constants(self, ts_cell):
-        ret = minimize(self.optim_err_lmb, x0=self.x0, args=(self.time_pre, self.time_post, ts_cell, self.k_v), bounds=bnds)
-        sim, dat = self.calc_ts_sim_ratio([ret.x[0], ret.x[1], ret.x[2]], self.time_pre, self.time_post, ts_cell, self.k_v)
-        return ret.x, sim, dat
-
-    @classmethod
-    def optim_err_lmb(cls, x, *args):
-        ts_sim_ratio, ts_exp_ratio = cls.calc_ts_sim_ratio(x, *args)
-        return ((ts_sim_ratio - ts_exp_ratio) ** 2).sum()
-
-    @classmethod
-    def calc_ts_sim_ratio(cls, x, *args):
-        '''x = [h, k_e, k_i]
-        '''
-        h, k_e, k_i = x[0], x[1], x[2]
-        time_pre, time_post, ts_exp_ratio, k_v = args[0], args[1], args[2], args[3]
-
-        ini_r_c = 1.0
-        ini_r_n = k_i/k_e
-
-        pre_inh = odeint(cls.ode_mutant_model, [ini_r_c, ini_r_n], time_pre, (k_v, k_i, k_e), rtol=1e-4)
-
-        post_inh = odeint(cls.ode_mutant_model, [pre_inh[-1][0], pre_inh[-1][1]], time_post,
-                          (k_v, k_i, k_e * h), rtol=1e-4)
-        pre_inh_ratio = [i[0]/i[1] for i in pre_inh]
-        post_inh_ratio = [i[0]/i[1] for i in post_inh]
-        ts_sim_ratio = np.array(pre_inh_ratio + post_inh_ratio)
-        return ts_sim_ratio, ts_exp_ratio
-
-    @staticmethod
-    def ode_mutant_model(y, t, *args):
-        k_v, k_i, k_e = args[0], args[1], args[2]
-        r_c, r_n = y[0], y[1]
-        d_r_c = -k_i * r_c + k_e * r_n
-        d_r_n = k_v * k_i * r_c - k_v * k_e * r_n
-        return [d_r_c, d_r_n]
+#
+#
+# class Estimator_h_ki_kv_orig(object):
+#     def __init__(self, time, ts_ratio, inh_timing, k_v, x0=None):
+#         self.time = time
+#         self.ts_ratio = ts_ratio
+#         self.inh_timing = inh_timing
+#         self.k_v = k_v
+#         if not x0:
+#             x0 = np.random.random(3)
+#         self.x0 = x0
+#         self.set_time_pre_post()
+#
+#     def set_time_pre_post(self):
+#         self.time_pre = self.time[self.time <= self.inh_timing]
+#         self.time_post = self.time[self.time > self.inh_timing]
+#
+#     def estimate(self):
+#         store = []
+#         for ts_cell in self.ts_ratio:
+#             ret = self.estimate_imex_constants(ts_cell)
+#             store.append(ret)
+#         return store
+#
+#     def estimate_imex_constants(self, ts_cell):
+#         ret = minimize(self.optim_err_lmb, x0=self.x0, args=(self.time_pre, self.time_post, ts_cell, self.k_v), bounds=bnds)
+#         sim, dat = self.calc_ts_sim_ratio([ret.x[0], ret.x[1], ret.x[2]], self.time_pre, self.time_post, ts_cell, self.k_v)
+#         return ret.x, sim, dat
+#
+#     @classmethod
+#     def optim_err_lmb(cls, x, *args):
+#         ts_sim_ratio, ts_exp_ratio = cls.calc_ts_sim_ratio(x, *args)
+#         return ((ts_sim_ratio - ts_exp_ratio) ** 2).sum()
+#
+#     @classmethod
+#     def calc_ts_sim_ratio(cls, x, *args):
+#         '''x = [h, k_e, k_i]
+#         '''
+#         h, k_e, k_i = x[0], x[1], x[2]
+#         time_pre, time_post, ts_exp_ratio, k_v = args[0], args[1], args[2], args[3]
+#
+#         ini_r_c = 1.0
+#         ini_r_n = k_i/k_e
+#
+#         pre_inh = odeint(cls.ode_mutant_model, [ini_r_c, ini_r_n], time_pre, (k_v, k_i, k_e), rtol=1e-4)
+#
+#         post_inh = odeint(cls.ode_mutant_model, [pre_inh[-1][0], pre_inh[-1][1]], time_post,
+#                           (k_v, k_i, k_e * h), rtol=1e-4)
+#         pre_inh_ratio = [i[0]/i[1] for i in pre_inh]
+#         post_inh_ratio = [i[0]/i[1] for i in post_inh]
+#         ts_sim_ratio = np.array(pre_inh_ratio + post_inh_ratio)
+#         return ts_sim_ratio, ts_exp_ratio
+#
+#     @staticmethod
+#     def ode_mutant_model(y, t, *args):
+#         k_v, k_i, k_e = args[0], args[1], args[2]
+#         r_c, r_n = y[0], y[1]
+#         d_r_c = -k_i * r_c + k_e * r_n
+#         d_r_n = k_v * k_i * r_c - k_v * k_e * r_n
+#         return [d_r_c, d_r_n]
 
 
 

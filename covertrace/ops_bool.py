@@ -25,8 +25,55 @@ def filter_frames_by_range(arr, LOWER=-10000, UPPER=10000, FRAME_START=0, FRAME_
     return -arr_bool
 
 
+def filter_frames_by_stats(arr, func=np.nanmean, LOWER=-np.Inf, UPPER=np.Inf, FRAME_START=0, FRAME_END=None):
+    """
+    Calculate statistics for each cells and replace values to NaN if it's not in a range.
+
+    Examples:
+
+        >>> arr = np.array([[0, 0, 0], [0, 1, 0], [0, 2, 1]])
+        >>> filter_frames_by_stats(arr, func=np.nanmax, UPPER=2)
+        array([[False, False, False],
+               [False, False, False],
+               [ True,  True,  True]], dtype=bool)
+    """
+    vec_stats = func(arr, axis=1)
+    vec_bool = (vec_stats < UPPER) * (vec_stats > LOWER)
+    arr_bool = np.column_stack([vec_bool for i in range(arr.shape[1])])
+    arr_bool[:, :FRAME_START] = True
+    if isinstance(FRAME_END, int):
+        arr_bool[:, FRAME_END:] = True
+    return -arr_bool
+
+def filter_frames_by_percentile_stats(arr, func=np.nanmean, LOWER=0, UPPER=100, FRAME_START=0, FRAME_END=None):
+    """
+    Calculate statistics for each cells and replace values to NaN if
+    values are not in a percentile indicated.
+
+    Examples:
+
+        >>> arr = np.reshape(np.arange(0, 10), (5, 2))
+        >>> filter_frames_by_percentile_stats(arr, func=np.nanmean, LOWER=20, UPPER=80)
+        array([[ True,  True],
+               [False, False],
+               [False, False],
+               [False, False],
+               [ True,  True]], dtype=bool)
+    """
+
+    vec_stats = func(arr, axis=1)
+    LOWP = np.nanpercentile(vec_stats, LOWER)
+    HIGHP = np.nanpercentile(vec_stats, UPPER)
+    vec_bool = (vec_stats <= HIGHP) * (vec_stats >= LOWP)
+    arr_bool = np.column_stack([vec_bool for i in range(arr.shape[1])])
+    arr_bool[:, :FRAME_START] = True
+    if isinstance(FRAME_END, int):
+        arr_bool[:, FRAME_END:] = True
+    return -arr_bool
+
+
 def filter_frames_by_diff(arr, pd_func_name='diff', PERIOD=1, THRES=0.1, FRAME_START=0,
-                          FRAME_END=None, LEFT=0, RIGHT=0):
+                          FRAME_END=None, absolute=False, LEFT=0, RIGHT=0):
     """Outlier detection by diff or pct_change.
     Replace values with NaN based on diff or pct_change. (may choose eitherfor pd_func_name.)
     FRAME_START and FRAME_END will determine which frames to filter.
@@ -42,7 +89,10 @@ def filter_frames_by_diff(arr, pd_func_name='diff', PERIOD=1, THRES=0.1, FRAME_S
         array([[False, False, False],
                [False,  True, False]], dtype=bool)
     """
-    above_thres = pd.DataFrame(arr).diff(axis=1).values > THRES
+    if not absolute:
+        above_thres = pd.DataFrame(arr).diff(axis=1).values > THRES
+    else:
+        above_thres = np.abs(pd.DataFrame(arr).diff(axis=1).values) > THRES
     fn = partial(extend_true, LEFT=LEFT, RIGHT=RIGHT)
     above_thres = np.apply_along_axis(fn, axis=1, arr=above_thres)
 

@@ -70,6 +70,12 @@ class Test_sites(unittest.TestCase):
         self.assertTrue(len(sites) == 1)
         self.assertEqual(before_cell_sum, sites.sample1.data.arr.shape[1])
 
+    def tests_collect(self):
+        sites = Sites(self.parent_folder, self.subfolders, file_name=self.file_name)
+        sites.set_state(['nuclei', 'DAPI', 'area'])
+        panels = sites.collect()
+        self.assertTrue(isinstance(panels, list))
+        self.assertEqual(len(panels), 2)
 
 
 if __name__ == '__main__':
