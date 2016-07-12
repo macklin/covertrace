@@ -144,6 +144,7 @@ class Site(object):
         self.file_name = file_name
         self.condition = condition
         self.name = basename(directory)
+        self._staged = staged
 
     @property
     def data(self):
@@ -168,11 +169,14 @@ class Site(object):
         staged.name = None
         print '\r'+'{0}: file_name is updated to {1}'.format(self.name, self.file_name),
 
-    def operate(self, operation, pid, ax=None):
+    def operate(self, operation, pid=1, ax=None):
         if 'ops_bool' in operation.func.__module__:
             # assign pid to cells based on bool_arr returned by operation
             bool_arr = operation(self.data.slice_arr)
             self.data.prop[bool_arr] = pid
+        if 'ops_filter' in operation.func.__module__:
+            # Does not explicitly change the array but it is modified inside.
+            operation(self.data.slice_arr)
         self.save()
 
     def _drop_prop(self, pid):

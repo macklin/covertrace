@@ -18,7 +18,7 @@ obj = ['nuclei', 'cytoplasm']
 ch = ['DAPI', 'YFP']
 prop = ['area', 'mean_intensity', 'min_intensity']
 labels = [i for i in product(obj, ch, prop)]
-arr = np.zeros((len(labels), 10, 5)) # 10 cells, 5 frames
+arr = np.zeros((len(labels), 10, 5))  # 10 cells, 5 frames
 arr[:, :, 1:] = 10
 
 DATA_PATH = join(ROOTDIR, 'data', 'tests.npz')
@@ -76,6 +76,21 @@ class Test_sites(unittest.TestCase):
         panels = sites.collect()
         self.assertTrue(isinstance(panels, list))
         self.assertEqual(len(panels), 2)
+
+
+class Test_site_operate(unittest.TestCase):
+    def setUp(self):
+        if not exists(DATA_PATH):
+            save_output(arr, labels, DATA_PATH)
+
+    def test_having_data(self):
+        site = Site(dirname(DATA_PATH), 'tests.npz')
+        import ops_filter
+        op = partial(ops_filter.normalize_data)
+        site._staged.state = ['nuclei', 'DAPI', 'area']
+        self.assertEqual(site.data['nuclei', 'DAPI', 'area'].max(), 10.0)
+        site.operate(op)
+        self.assertEqual(site.data['nuclei', 'DAPI', 'area'].max(), 1.0)
 
 
 if __name__ == '__main__':
