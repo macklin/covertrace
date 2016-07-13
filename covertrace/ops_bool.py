@@ -17,11 +17,17 @@ def filter_frames_by_range(arr, LOWER=-10000, UPPER=10000, FRAME_START=0, FRAME_
         >>> filter_frames_by_range(arr, UPPER=1)
         array([[False, False, False],
                [False,  True, False]], dtype=bool)
+        >>> arr1 = np.array([[0, 0, np.nan], [0, np.nan, 0]], np.float32)
+        >>> filter_frames_by_range(arr1, UPPER=1)
+        array([[False, False, False],
+               [False, False, False]], dtype=bool)
+
     """
     arr_bool = (arr < UPPER) * (arr > LOWER)
     arr_bool[:, :FRAME_START] = True
     if isinstance(FRAME_END, int):
         arr_bool[:, FRAME_END:] = True
+    arr_bool[np.isnan(arr)] = True  # ignore nan
     return -arr_bool
 
 
@@ -43,6 +49,7 @@ def filter_frames_by_stats(arr, func=np.nanmean, LOWER=-np.Inf, UPPER=np.Inf, FR
     arr_bool[:, :FRAME_START] = True
     if isinstance(FRAME_END, int):
         arr_bool[:, FRAME_END:] = True
+    arr_bool[np.isnan(arr)] = True  # ignore nan
     return -arr_bool
 
 def filter_frames_by_percentile_stats(arr, func=np.nanmean, LOWER=0, UPPER=100, FRAME_START=0, FRAME_END=None):
@@ -69,6 +76,7 @@ def filter_frames_by_percentile_stats(arr, func=np.nanmean, LOWER=0, UPPER=100, 
     arr_bool[:, :FRAME_START] = True
     if isinstance(FRAME_END, int):
         arr_bool[:, FRAME_END:] = True
+    arr_bool[np.isnan(arr)] = True  # ignore nan
     return -arr_bool
 
 
