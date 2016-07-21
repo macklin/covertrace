@@ -8,7 +8,7 @@ import pandas as pd
 
 
 
-def filter_frames_by_range(arr, LOWER=-10000, UPPER=10000, FRAME_START=0, FRAME_END=None):
+def filter_frames_by_range(arr, LOWER=-10000, UPPER=np.Inf, FRAME_START=0, FRAME_END=None):
     """Replace values with NaN if it's not in a range specified by LOWER and UPPER.
     FRAME_START and FRAME_END will determine which frames to look at.
 
@@ -21,7 +21,6 @@ def filter_frames_by_range(arr, LOWER=-10000, UPPER=10000, FRAME_START=0, FRAME_
         >>> filter_frames_by_range(arr1, UPPER=1)
         array([[False, False, False],
                [False, False, False]], dtype=bool)
-
     """
     arr_bool = (arr < UPPER) * (arr > LOWER)
     arr_bool[:, :FRAME_START] = True
