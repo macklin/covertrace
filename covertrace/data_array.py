@@ -22,7 +22,6 @@ from image_vis import ImageVis
 
 class Stage(object):
     name = None
-    state = None
     dataholder = None
     _any = True
     new_file_name = 'arr_modified.npz'
@@ -75,7 +74,8 @@ class Sites(object):
         self.staged = staged
 
     def set_state(self, state):
-        self.staged.state = state
+        for site in self:
+            site._set_state(state)
 
     def __iter__(self):
         __num_keys = 0
@@ -138,6 +138,7 @@ class Site(object):
     """name: equivalent to attribute name of Sites
     """
     merged = 0
+    _state = None
 
     def __init__(self, directory, file_name, condition=None):
         self.directory = directory
@@ -145,6 +146,10 @@ class Site(object):
         self.condition = condition
         self.name = basename(directory)
         self._staged = staged
+
+    def _set_state(self, state):
+        self._state = state
+        self.data._state = state
 
     @property
     def data(self):
@@ -155,7 +160,7 @@ class Site(object):
 
     def _read_arr(self, path):
         file_obj = np.load(path)
-        return DataHolder(file_obj['data'], file_obj['labels'].tolist(), self.name)
+        return DataHolder(file_obj['data'], file_obj['labels'].tolist(), self.name, self._state)
 
     def save(self, arr=[], labels=[], new_file_name=None):
         if not len(arr):
@@ -200,13 +205,14 @@ class Site(object):
 
 
 class ImageHolder(object):
-    def __init__(self, directory, channels, objects):
+    def __init__(self, directory, channels, objects, state):
         self.dir = directory
         for ch in channels:
             setattr(self, ch, partial(self._channels, ch=ch))
         for ob in objects:
             setattr(self, ob, partial(self.outlines, ob=ob))
-        self.visualize = ImageVis(self, staged.dataholder, staged.state)
+        self._state = state
+        self.visualize = ImageVis(self, staged.dataholder, self._state)
 
     def _retrieve_file_name_by_frame(self, subfolder, frame):
         files = os.listdir(join(self.dir, subfolder))
@@ -240,7 +246,7 @@ class DataHolder(object):
     >>> print DataHolder(arr, labels)['nuc', 'CFP', 'x'].shape
     (10, 5)
     '''
-    def __init__(self, arr, labels, name=None):
+    def __init__(self, arr, labels, name=None, state=None):
         labels, arr = sort_labels_and_arr(labels, arr)
 
         if not [i for i in labels if 'prop' in i]:
@@ -252,6 +258,7 @@ class DataHolder(object):
         self.arr = arr
         self.labels = labels
         self.name = name
+        self._state = state
 
     @property
     def prop(self):
@@ -274,13 +281,13 @@ class DataHolder(object):
         '''If staged.state is a list of lists, return a list of arr.
         If staged.state is a single list, return 2D or 3D numpy array.
         '''
-        if isinstance(staged.state[0], list):
+        if isinstance(self._state[0], list):
             arr_list = []
-            for st in staged.state:
+            for st in self._state:
                 arr_list.append(self.__getitem__(tuple(st)))
             return arr_list
-        elif isinstance(staged.state[0], str):
-            return self.__getitem__(tuple(staged.state))
+        elif isinstance(self._state[0], str):
+            return self.__getitem__(tuple(self._state))
         else:
             return self.arr
 
@@ -288,12 +295,12 @@ class DataHolder(object):
     def slice_prop(self):
         '''Return a list of dict containing array sliced by prop value.'''
         ret = []
-        if isinstance(staged.state[0], str):
+        if isinstance(self._state[0], str):
             slice_arr = [self.slice_arr, ]
-            state = [staged.state, ]
+            state = [self._state, ]
         else:
             slice_arr = self.slice_arr
-            state = staged.state
+            state = self._state
         prop_set = np.unique(self['prop'])
         for num, warr in enumerate(slice_arr):
             for pi in prop_set:
@@ -350,7 +357,7 @@ if __name__ == '__main__':
     data = np.zeros((len(labels), 10, 5)) # 10 cells, 5 frames
     data[:, :, 1:] = 10
 
-    dh = DataHolder(data, labels)
+    dh = DataHolder(data, labels, ['nuclei'])
     dh['cytoplasm', 'DAPI', 'area'][5, 2] = np.Inf
     # staged.state = [['cytoplasm', 'DAPI', 'area'], ['nuclei', 'DAPI']]
     # print site.data.arr.shape
