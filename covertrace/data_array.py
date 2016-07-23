@@ -201,7 +201,7 @@ class Site(object):
     def images(self):
         objects = set([i[0] for i in self.data.labels if len(i) == 3])
         channels = set([i[1] for i in self.data.labels if len(i) == 3])
-        return ImageHolder(self.directory, channels, objects)
+        return ImageHolder(self.directory, channels, objects, self._state)
 
 
 class ImageHolder(object):
@@ -278,8 +278,8 @@ class DataHolder(object):
 
     @property
     def slice_arr(self):
-        '''If staged.state is a list of lists, return a list of arr.
-        If staged.state is a single list, return 2D or 3D numpy array.
+        '''If state is a list of lists, return a list of arr.
+        If state is a single list, return 2D or 3D numpy array.
         '''
         if isinstance(self._state[0], list):
             arr_list = []
@@ -337,42 +337,6 @@ class DataHolder(object):
         bool_ind = self.retrieve_bool_ind(self.prop, pid)
         self.arr = np.take(self.arr, np.where(-bool_ind)[0], axis=-2)
 
-    def visit(self, visitor):
-        '''visitor pattern.'''
-        visitor(self)
-
 
 if __name__ == '__main__':
-    parent_folder = '/Users/kudo/gdrive/GitHub/covertrace/data/Pos005'
-    sub_folders = ['Pos005', 'Pos007', 'Pos008']
-    conditions = ['IL1B', 'IL1B', 'LPS']
-    site = Site(parent_folder, 'arr.npz')
-    # print site.prop_arr(propid=0).shape
-
-    from itertools import product
-    obj = ['nuclei', 'cytoplasm']
-    ch = ['DAPI']
-    prop = ['area', 'x']
-    labels = [i for i in product(obj, ch, prop)]
-    data = np.zeros((len(labels), 10, 5)) # 10 cells, 5 frames
-    data[:, :, 1:] = 10
-
-    dh = DataHolder(data, labels, ['nuclei'])
-    dh['cytoplasm', 'DAPI', 'area'][5, 2] = np.Inf
-    # staged.state = [['cytoplasm', 'DAPI', 'area'], ['nuclei', 'DAPI']]
-    # print site.data.arr.shape
-    #
-    # site.data._add_null_field(['test'])
-    # print site.data.arr.shape
-    # print site.data['test'].shape
-
-    import ops_plotter
-    from functools import partial
-
-    parent_folder = '/Users/kudo/gdrive/GitHub/covertrace/data/'
-
-    sites = Sites(parent_folder, sub_folders, conditions)
-    sites.Pos005.data['prop'][5, :] = 2
-    sites.staged.state = [['cytoplasm', 'DAPI', 'area'], ['nuclei', 'DAPI', 'area']]
-    sites.collect()
-    print sites.Pos005.data.slice_arr.__len__()
+    pass
