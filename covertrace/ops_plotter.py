@@ -6,6 +6,7 @@ import numpy as np
 def plot_all(arr, ax=None, **kwargs):
     pd.DataFrame(arr.T).plot(legend=False, ax=ax, **kwargs)
 
+
 def plot_heatmap(arr, ax=None, **kwargs):
     sns.heatmap(arr, ax=ax, **kwargs)
 

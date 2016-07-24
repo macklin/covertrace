@@ -87,7 +87,7 @@ class Test_site_operate(unittest.TestCase):
         site = Site(dirname(DATA_PATH), 'tests.npz')
         import ops_filter
         op = partial(ops_filter.normalize_data)
-        site._staged.state = ['nuclei', 'DAPI', 'area']
+        site._set_state(['nuclei', 'DAPI', 'area'])
         self.assertEqual(site.data['nuclei', 'DAPI', 'area'].max(), 10.0)
         site.operate(op)
         self.assertEqual(site.data['nuclei', 'DAPI', 'area'].max(), 1.0)
