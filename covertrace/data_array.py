@@ -52,7 +52,7 @@ class Plotter(object):
                 operation(data['arr'], ax)
                 ax.set_title('{0}\n{1}/{2}/{3},\nprop={4}'.format(*[data['name']] + data['labels'] + [data['prop']]))
         return fig, axes
-
+    
     def _make_fig_axes(self, num_axes):
         fig, axes = plt.subplots(1, num_axes, figsize=(15, 5), sharey=True)
         plt.tight_layout(pad=2, w_pad=0.5, h_pad=2.0)
@@ -177,6 +177,10 @@ class Site(object):
         if 'ops_filter' in operation.func.__module__:
             # Does not explicitly change the array but it is modified inside.
             operation(self.data.slice_arr)
+        if 'ops_sort' in operation.func.__module__:
+            #NEW
+            sort_idx = operation(self.data.slice_arr)
+            self.data.arr[:] = self.data.arr[sort_idx, :, :]
         self.save()
 
     def _drop_prop(self, pid):
