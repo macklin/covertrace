@@ -247,13 +247,13 @@ class DataHolder(object):
     (10, 5)
     '''
     def __init__(self, arr, labels, name=None, state=None):
-        labels, arr = sort_labels_and_arr(labels, arr)
-
         if not [i for i in labels if 'prop' in i]:
             zero_arr = np.expand_dims(np.zeros(arr[0, :, :].shape), axis=0)
             arr = np.concatenate([zero_arr, arr], axis=0)
             labels.insert(0, ['prop'])
-
+        if isinstance(labels[0], tuple):
+            labels = [list(i) for i in labels]
+        labels, arr = sort_labels_and_arr(labels, arr)
         labels = [tuple(i) for i in labels]
         self.arr = arr
         self.labels = labels
@@ -270,7 +270,7 @@ class DataHolder(object):
         if isinstance(item, str):
             lis = [n for n, i in enumerate(self.labels) if i[0] == item]
         elif isinstance(item, tuple) or isinstance(item, list):
-            lis = [n for n, i in enumerate(self.labels) if i[:len(item)] == item]
+            lis = [n for n, i in enumerate(self.labels) if tuple(i[:len(item)]) == tuple(item)]
         if len(lis) == 1:
             return self.arr[lis[0], :, :]
         else:
