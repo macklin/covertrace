@@ -22,7 +22,6 @@ from image_vis import ImageVis
 
 class Stage(object):
     name = None
-    state = None
     dataholder = None
     _any = True
     new_file_name = 'arr_modified.npz'
@@ -75,7 +74,8 @@ class Sites(object):
         self.staged = staged
 
     def set_state(self, state):
-        self.staged.state = state
+        for site in self:
+            site._set_state(state)
 
     def __iter__(self):
         __num_keys = 0
@@ -138,6 +138,7 @@ class Site(object):
     """name: equivalent to attribute name of Sites
     """
     merged = 0
+    _state = None
 
     def __init__(self, directory, file_name, condition=None):
         self.directory = directory
@@ -145,6 +146,10 @@ class Site(object):
         self.condition = condition
         self.name = basename(directory)
         self._staged = staged
+
+    def _set_state(self, state):
+        self._state = state
+        self.data._state = state
 
     @property
     def data(self):
@@ -155,7 +160,7 @@ class Site(object):
 
     def _read_arr(self, path):
         file_obj = np.load(path)
-        return DataHolder(file_obj['data'], file_obj['labels'].tolist(), self.name)
+        return DataHolder(file_obj['data'], file_obj['labels'].tolist(), self.name, self._state)
 
     def save(self, arr=[], labels=[], new_file_name=None):
         if not len(arr):
@@ -200,17 +205,18 @@ class Site(object):
     def images(self):
         objects = set([i[0] for i in self.data.labels if len(i) == 3])
         channels = set([i[1] for i in self.data.labels if len(i) == 3])
-        return ImageHolder(self.directory, channels, objects)
+        return ImageHolder(self.directory, channels, objects, self._state)
 
 
 class ImageHolder(object):
-    def __init__(self, directory, channels, objects):
+    def __init__(self, directory, channels, objects, state):
         self.dir = directory
         for ch in channels:
             setattr(self, ch, partial(self._channels, ch=ch))
         for ob in objects:
             setattr(self, ob, partial(self.outlines, ob=ob))
-        self.visualize = ImageVis(self, staged.dataholder, staged.state)
+        self._state = state
+        self.visualize = ImageVis(self, staged.dataholder, self._state)
 
     def _retrieve_file_name_by_frame(self, subfolder, frame):
         files = os.listdir(join(self.dir, subfolder))
@@ -244,18 +250,19 @@ class DataHolder(object):
     >>> print DataHolder(arr, labels)['nuc', 'CFP', 'x'].shape
     (10, 5)
     '''
-    def __init__(self, arr, labels, name=None):
-        labels, arr = sort_labels_and_arr(labels, arr)
-
+    def __init__(self, arr, labels, name=None, state=None):
         if not [i for i in labels if 'prop' in i]:
             zero_arr = np.expand_dims(np.zeros(arr[0, :, :].shape), axis=0)
             arr = np.concatenate([zero_arr, arr], axis=0)
             labels.insert(0, ['prop'])
-
+        if isinstance(labels[0], tuple):
+            labels = [list(i) for i in labels]
+        labels, arr = sort_labels_and_arr(labels, arr)
         labels = [tuple(i) for i in labels]
         self.arr = arr
         self.labels = labels
         self.name = name
+        self._state = state
 
     @property
     def prop(self):
@@ -267,7 +274,7 @@ class DataHolder(object):
         if isinstance(item, str):
             lis = [n for n, i in enumerate(self.labels) if i[0] == item]
         elif isinstance(item, tuple) or isinstance(item, list):
-            lis = [n for n, i in enumerate(self.labels) if i[:len(item)] == item]
+            lis = [n for n, i in enumerate(self.labels) if tuple(i[:len(item)]) == tuple(item)]
         if len(lis) == 1:
             return self.arr[lis[0], :, :]
         else:
@@ -275,16 +282,16 @@ class DataHolder(object):
 
     @property
     def slice_arr(self):
-        '''If staged.state is a list of lists, return a list of arr.
-        If staged.state is a single list, return 2D or 3D numpy array.
+        '''If state is a list of lists, return a list of arr.
+        If state is a single list, return 2D or 3D numpy array.
         '''
-        if isinstance(staged.state[0], list):
+        if isinstance(self._state[0], list):
             arr_list = []
-            for st in staged.state:
+            for st in self._state:
                 arr_list.append(self.__getitem__(tuple(st)))
             return arr_list
-        elif isinstance(staged.state[0], str):
-            return self.__getitem__(tuple(staged.state))
+        elif isinstance(self._state[0], str):
+            return self.__getitem__(tuple(self._state))
         else:
             return self.arr
 
@@ -292,12 +299,12 @@ class DataHolder(object):
     def slice_prop(self):
         '''Return a list of dict containing array sliced by prop value.'''
         ret = []
-        if isinstance(staged.state[0], str):
+        if isinstance(self._state[0], str):
             slice_arr = [self.slice_arr, ]
-            state = [staged.state, ]
+            state = [self._state, ]
         else:
             slice_arr = self.slice_arr
-            state = staged.state
+            state = self._state
         prop_set = np.unique(self['prop'])
         for num, warr in enumerate(slice_arr):
             for pi in prop_set:
@@ -334,42 +341,6 @@ class DataHolder(object):
         bool_ind = self.retrieve_bool_ind(self.prop, pid)
         self.arr = np.take(self.arr, np.where(-bool_ind)[0], axis=-2)
 
-    def visit(self, visitor):
-        '''visitor pattern.'''
-        visitor(self)
-
 
 if __name__ == '__main__':
-    parent_folder = '/Users/kudo/gdrive/GitHub/covertrace/data/Pos005'
-    sub_folders = ['Pos005', 'Pos007', 'Pos008']
-    conditions = ['IL1B', 'IL1B', 'LPS']
-    site = Site(parent_folder, 'arr.npz')
-    # print site.prop_arr(propid=0).shape
-
-    from itertools import product
-    obj = ['nuclei', 'cytoplasm']
-    ch = ['DAPI']
-    prop = ['area', 'x']
-    labels = [i for i in product(obj, ch, prop)]
-    data = np.zeros((len(labels), 10, 5)) # 10 cells, 5 frames
-    data[:, :, 1:] = 10
-
-    dh = DataHolder(data, labels)
-    dh['cytoplasm', 'DAPI', 'area'][5, 2] = np.Inf
-    # staged.state = [['cytoplasm', 'DAPI', 'area'], ['nuclei', 'DAPI']]
-    # print site.data.arr.shape
-    #
-    # site.data._add_null_field(['test'])
-    # print site.data.arr.shape
-    # print site.data['test'].shape
-
-    import ops_plotter
-    from functools import partial
-
-    parent_folder = '/Users/kudo/gdrive/GitHub/covertrace/data/'
-
-    sites = Sites(parent_folder, sub_folders, conditions)
-    sites.Pos005.data['prop'][5, :] = 2
-    sites.staged.state = [['cytoplasm', 'DAPI', 'area'], ['nuclei', 'DAPI', 'area']]
-    sites.collect()
-    print sites.Pos005.data.slice_arr.__len__()
+    pass

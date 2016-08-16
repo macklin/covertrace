@@ -18,6 +18,7 @@ obj = ['nuclei', 'cytoplasm']
 ch = ['DAPI', 'YFP']
 prop = ['area', 'mean_intensity', 'min_intensity']
 labels = [i for i in product(obj, ch, prop)]
+labels.append(['abs_id', ])
 arr = np.zeros((len(labels), 10, 5))  # 10 cells, 5 frames
 arr[:, :, 1:] = 10
 
@@ -45,6 +46,19 @@ class Test_sites(unittest.TestCase):
         self.parent_folder = join(ROOTDIR, 'data', 'sample')
         self.subfolders = ('sample1', 'sample2')
         self.file_name = 'tests.npz'
+        for sub in self.subfolders:
+            if not exists(join(self.parent_folder, sub)):
+                os.makedirs(join(self.parent_folder, sub))
+                save_output(arr, labels, join(self.parent_folder, sub, self.file_name))
+
+    def tearDown(self):
+        for sub in self.subfolders:
+            os.remove(join(self.parent_folder, sub, 'tests.npz'))
+            try:
+                os.remove(join(self.parent_folder, sub, 'arr_modified.npz'))
+            except:
+                pass
+            os.removedirs(join(self.parent_folder, sub))
 
     def test_having_data(self):
         sites = Sites(self.parent_folder, self.subfolders, file_name=self.file_name)
@@ -87,7 +101,7 @@ class Test_site_operate(unittest.TestCase):
         site = Site(dirname(DATA_PATH), 'tests.npz')
         import ops_filter
         op = partial(ops_filter.normalize_data)
-        site._staged.state = ['nuclei', 'DAPI', 'area']
+        site._set_state(['nuclei', 'DAPI', 'area'])
         self.assertEqual(site.data['nuclei', 'DAPI', 'area'].max(), 10.0)
         site.operate(op)
         self.assertEqual(site.data['nuclei', 'DAPI', 'area'].max(), 1.0)

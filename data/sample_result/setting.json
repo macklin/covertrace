@@ -1,0 +1,90 @@
+{
+    "last_frame": null, 
+    "subdetect_args": [
+        {
+            "seed_obj": "nuclei", 
+            "object_name": "cytoplasm", 
+            "RINGWIDTH": 5, 
+            "MARGIN": 1, 
+            "name": "ring_dilation"
+        }
+    ], 
+    "ROOT_FOLDER": "/Users/kudo/ktr_protocol/covertrackdev", 
+    "preprocess_args": [
+        {
+            "name": "background_subtraction_wavelet"
+        }
+    ], 
+    "objects": [
+        "nuclei", 
+        "cytoplasm"
+    ], 
+    "postprocess_args": [
+        {
+            "DIVISIONMASSERR": 0.1, 
+            "DISPLACEMENT": 20, 
+            "name": "detect_division"
+        }, 
+        {
+            "name": "gap_closing"
+        }, 
+        {
+            "minframe": 2, 
+            "name": "cut_short_traces"
+        }
+    ], 
+    "track_args": [
+        {
+            "MASSTHRES": 0.2, 
+            "DISPLACEMENT": 50, 
+            "name": "run_lap"
+        }, 
+        {
+            "MASSTHRES": 0.2, 
+            "EDGELEN": 7, 
+            "DISPLACEMENT": 50, 
+            "name": "track_neck_cut"
+        }, 
+        {
+            "ERODI": 6, 
+            "MASSTHRES": 0.2, 
+            "DISPLACEMENT": 50, 
+            "name": "watershed_distance"
+        }
+    ], 
+    "img_shape": [
+        720, 
+        853
+    ], 
+    "output_parent_dir": "/Users/kudo/ktr_protocol/covertrackdev/tests/output", 
+    "channels": [
+        "Far-red", 
+        "YFP"
+    ], 
+    "channeldict": {
+        "Far-red": [
+            "/Users/kudo/ktr_protocol/covertrackdev/data/testimages2/img_000000000_Far-red_000.png", 
+            "/Users/kudo/ktr_protocol/covertrackdev/data/testimages2/img_000000001_Far-red_000.png", 
+            "/Users/kudo/ktr_protocol/covertrackdev/data/testimages2/img_000000002_Far-red_000.png", 
+            "/Users/kudo/ktr_protocol/covertrackdev/data/testimages2/img_000000003_Far-red_000.png"
+        ], 
+        "YFP": [
+            "/Users/kudo/ktr_protocol/covertrackdev/data/testimages2/img_000000000_YFP_000.png", 
+            "/Users/kudo/ktr_protocol/covertrackdev/data/testimages2/img_000000001_YFP_000.png", 
+            "/Users/kudo/ktr_protocol/covertrackdev/data/testimages2/img_000000002_YFP_000.png", 
+            "/Users/kudo/ktr_protocol/covertrackdev/data/testimages2/img_000000003_YFP_000.png"
+        ]
+    }, 
+    "first_frame": null, 
+    "input_parent_dir": "/Users/kudo/ktr_protocol/covertrackdev/data/testimages2", 
+    "outputdir": "/Users/kudo/ktr_protocol/covertrackdev/tests/output/testimages2", 
+    "segment_args": [
+        {
+            "REGWSHED": 10, 
+            "NUCRAD": 9, 
+            "THRES": 120, 
+            "SHRINK": 1, 
+            "name": "constant_lap_edge"
+        }
+    ]
+}

@@ -2,6 +2,7 @@ import pandas as pd
 from itertools import product
 import numpy as np
 from os.path import basename, join, dirname
+from operator import itemgetter
 
 
 def pd_array_convert(path):
@@ -30,45 +31,97 @@ def save_output(arr, labels, path):
 def sort_labels_and_arr(labels, arr=[]):
     '''
     >>> labels = [['a', 'B', '1'], ['a', 'A', '1'], ['b', 'A', '3'], ['b', 'B', '2']]
-    >>> sort_labels(labels)
+    >>> sort_labels_and_arr(labels)
     [['a', 'A', '1'], ['a', 'B', '1'], ['b', 'A', '3'], ['b', 'B', '2']]
     >>> labels = [['a', 'B', '1'], ['prop'], ['aprop'], ['b', 'B', '2']]
-    >>> sort_labels(labels)
-    [['aprop'], ['prop'], ['a', 'B', '1'], ['b', 'B', '2']]
+    >>> sort_labels_and_arr(labels)
+    [['a', 'B', '1'], ['aprop'], ['b', 'B', '2'], ['prop']]
     '''
-    single_labels, single_idx = sort_multi_labels([a for a in labels if len(a) == 1])
-    multi_labels, multi_idx = sort_multi_labels([a for a in labels if len(a) == 3])
-    # sort_idx = single_idx + [i + len(single_idx) for i in multi_idx]
-    sort_idx = []
-    for i in labels:
-        if i in multi_labels:
-            sort_idx.append(multi_labels.index(i) + len(single_labels))
-        elif i in single_labels:
-            sort_idx.append(single_labels.index(i))
-    labels = [labels[i] for i in sort_idx]
+    # single_labels, single_idx = sort_multi_labels([a for a in labels if len(a) == 1])
+    # multi_labels, multi_idx = sort_multi_labels([a for a in labels if len(a) == 3])
+    # # sort_idx = single_idx + [i + len(single_idx) for i in multi_idx]
+    # sort_idx = []
+    # for i in labels:
+    #     if i in multi_labels:
+    #         sort_idx.append(multi_labels.index(i) + len(single_labels))
+    #     elif i in single_labels:
+    #         sort_idx.append(single_labels.index(i))
+    # labels = [labels[i] for i in sort_idx]
+    labels = [list(i) for i in labels]
+    labels, sort_idx = sort_multi_lists(labels)
     if not len(arr):
         return labels
     if len(arr):
         arr = arr[sort_idx, :, :]
         return labels, arr
 
+#
+# def sort_multi_labels(labels):
+#     '''
+#     >>> sort_multi_labels([['b'], ['c'], ['a']])
+#     ([['a'], ['b'], ['c']], [2, 0, 1])
+#     >>> labels = [['a', 'B', '1'], ['a', 'A', '1'], ['b', 'A', '3'], ['b', 'B', '2']]
+#     >>> sort_multi_labels(labels)
+#     ([['a', 'A', '1'], ['a', 'B', '1'], ['b', 'A', '3'], ['b', 'B', '2']], [1, 0, 2, 3])
+#     '''
+#     sort_idx = []
+#     if labels:
+#         if len(labels[0]) == 1:
+#             sort_func = lambda x: (x[1][0])
+#         elif len(labels[0]) == 2:
+#             sort_func = lambda x: (x[1][0], x[1][1])
+#         elif len(labels[0]) == 3:
+#             sort_func = lambda x: (x[1][0], x[1][1], x[1][2])
+#         sort_idx = [i[0] for i in sorted(enumerate(labels), key=sort_func)]
+#         labels = [labels[i] for i in sort_idx]
+#     return labels, sort_idx
 
-def sort_multi_labels(labels):
-    '''
-    >>> sort_multi_labels([['b'], ['c'], ['a']])
-    ([['a'], ['b'], ['c']], [2, 0, 1])
-    >>> labels = [['a', 'B', '1'], ['a', 'A', '1'], ['b', 'A', '3'], ['b', 'B', '2']]
-    >>> sort_multi_labels(labels)
-    ([['a', 'A', '1'], ['a', 'B', '1'], ['b', 'A', '3'], ['b', 'B', '2']], [1, 0, 2, 3])
-    '''
-    sort_idx = []
-    if labels:
-        if len(labels[0]) == 1:
-            sort_func = lambda x: (x[1][0])
-        elif len(labels[0]) == 2:
-            sort_func = lambda x: (x[1][0], x[1][1])
-        elif len(labels[0]) == 3:
-            sort_func = lambda x: (x[1][0], x[1][1], x[1][2])
-        sort_idx = [i[0] for i in sorted(enumerate(labels), key=sort_func)]
-        labels = [labels[i] for i in sort_idx]
-    return labels, sort_idx
+
+def uniform_list_length(labels):
+    """
+    Insert empty string untill all the elements in labels have the same length.
+
+    Examples:
+
+    >>> uniform_list_length([['a'], ['a', 'b'], ['a', 'b', 'c']])
+    [['a', ' ', ' '], ['a', 'b', ' '], ['a', 'b', 'c']]
+    """
+    max_num = max([len(i) for i in labels])
+    for label in labels:
+        for num in range(1, max_num):
+            if len(label) == num:
+                label.extend([" " for i in range(max_num - num)])
+    return labels
+
+
+def undo_uniform_list_length(labels):
+    """
+    Remove empty string after the operation done by uniform_list_length.
+
+    Examples:
+
+    >>> undo_uniform_list_length(uniform_list_length([['a'], ['a', 'b'], ['a', 'b', 'c']]))
+    [['a'], ['a', 'b'], ['a', 'b', 'c']]
+    """
+    for label in labels:
+        while " " in label:
+            label.remove(" ")
+    return labels
+
+def sort_multi_lists(labels):
+    """
+    Sort a list by the order of column 0, 1 and 2.
+    Works for a list having different length of elements.
+    Now only work for a list with maximum three elements.
+
+    Examples:
+    >>> sort_multi_lists([['a', 'c'], ['a', 'b'], ['a', 'b', 'c']])
+    ([['a', 'b'], ['a', 'b', 'c'], ['a', 'c']], [1, 2, 0])
+    """
+    unilabels = uniform_list_length(labels)
+    intlist = [[i] * 3 for i in range(len(unilabels))]
+    # sort_func = itemgetter(*range(len(unilabels[0])))
+    sort_func = lambda item: (item[0][0], item[0][1], item[0][2])
+    sort_idx = [ii[0] for (i, ii) in sorted(zip(unilabels, intlist), key=sort_func)]
+    sort_labels = [unilabels[i] for i in sort_idx]
+    return undo_uniform_list_length(sort_labels), sort_idx

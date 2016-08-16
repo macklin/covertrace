@@ -21,7 +21,6 @@ def filter_frames_by_range(arr, LOWER=-10000, UPPER=np.Inf, FRAME_START=0, FRAME
         >>> filter_frames_by_range(arr1, UPPER=1)
         array([[False, False, False],
                [False, False, False]], dtype=bool)
-
     """
     arr_bool = (arr < UPPER) * (arr > LOWER)
     arr_bool[:, :FRAME_START] = True
