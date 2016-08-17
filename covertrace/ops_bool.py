@@ -21,6 +21,7 @@ def filter_frames_by_range(arr, LOWER=-10000, UPPER=np.Inf, FRAME_START=0, FRAME
         >>> filter_frames_by_range(arr1, UPPER=1)
         array([[False, False, False],
                [False, False, False]], dtype=bool)
+
     """
     arr_bool = (arr < UPPER) * (arr > LOWER)
     arr_bool[:, :FRAME_START] = True
@@ -29,7 +30,7 @@ def filter_frames_by_range(arr, LOWER=-10000, UPPER=np.Inf, FRAME_START=0, FRAME
     arr_bool[np.isnan(arr)] = True  # ignore nan
     return -arr_bool
 
-def cut_short_traces(arr, MINFRAME=5):
+def cut_short_traces(arr, MINFRAME=5, FRAME_START=0, FRAME_END=None):
     """
     MINFRAME is a number of non NaN frames needed.
     Examples:
@@ -38,8 +39,12 @@ def cut_short_traces(arr, MINFRAME=5):
         array([[ True,  True,  True],
                [False, False, False]], dtype=bool)
     """
-    short_idx = (-np.isnan(arr)).sum(axis=1) < MINFRAME
+    
     arr_bool = np.zeros(arr.shape, np.bool)
+    
+    arr = arr[:, FRAME_START:FRAME_END]
+        
+    short_idx = (-np.isnan(arr)).sum(axis=1) < MINFRAME
     arr_bool[short_idx, :] = True
     return arr_bool
 
