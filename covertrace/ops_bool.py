@@ -80,7 +80,7 @@ def filter_frames_by_percentile_stats(arr, func=np.nanmean, LOWER=0, UPPER=100, 
 
 
 def filter_frames_by_diff(arr, pd_func_name='diff', PERIOD=1, THRES=0.1, FRAME_START=0,
-                          FRAME_END=None, absolute=False, LEFT=0, RIGHT=0):
+                          FRAME_END=None, absolute=True, LEFT=0, RIGHT=0):
     """Outlier detection by diff or pct_change.
     Replace values with NaN based on diff or pct_change. (may choose eitherfor pd_func_name.)
     FRAME_START and FRAME_END will determine which frames to filter.
@@ -91,15 +91,23 @@ def filter_frames_by_diff(arr, pd_func_name='diff', PERIOD=1, THRES=0.1, FRAME_S
 
     Examples:
 
-        >>> arr = np.array([[0, 10, 0], [0, 100, 0]], np.float32)
+        >>> arr = np.array([[0, 10, 0], [0, 0, 100]], np.float32)
         >>> filter_frames_by_diff(arr, THRES=15)
         array([[False, False, False],
-               [False,  True, False]], dtype=bool)
+               [False, False,  True]], dtype=bool)
+        >>> arr = np.array([[0, 10, 0], [0, -100, 0]], np.float32)
+        >>> filter_frames_by_diff(arr, THRES=15, absolute=True)
+        array([[False, False, False],
+               [ True,  True,  True]], dtype=bool)
     """
+    tarr = np.concatenate((arr[:, 1:2], arr), axis=1)  # pad='wrap'
+    func = getattr(pd.DataFrame, pd_func_name)
+
     if not absolute:
-        above_thres = pd.DataFrame(arr).diff(axis=1).values > THRES
-    else:
-        above_thres = np.abs(pd.DataFrame(arr).diff(axis=1).values) > THRES
+        above_thres = func(pd.DataFrame(tarr), periods=1, axis=1).values > THRES
+    elif absolute:
+        above_thres = np.abs(func(pd.DataFrame(tarr), periods=1, axis=1).values) > THRES
+    above_thres = above_thres[:, 1:]
     fn = partial(extend_true, LEFT=LEFT, RIGHT=RIGHT)
     above_thres = np.apply_along_axis(fn, axis=1, arr=above_thres)
 
@@ -123,3 +131,24 @@ def filter_from_last_frames(arr, FRAME_START=0, FRAME_END=None, LEFT=0):
     fn = partial(extend_true, LEFT=LEFT, RIGHT=0)
     nan_appeared = np.apply_along_axis(fn, axis=1, arr=nan_appeared)
     return nan_appeared
+
+
+def calc_rolling_func_filter(arr, func_name='rolling_mean', window=3, threshold=0.1):
+    """Calculate pandas rolling statistics and remove something above thres.
+    Can use rolling_median/rolling_mean/rolling_sum...
+
+    Examples:
+        >>> arr = np.array([[10, 0, 0], [0, 0, 10]], np.float32)
+        >>> calc_rolling_func_filter(arr, threshold=4)
+        array([[ True, False, False],
+               [False, False,  True]], dtype=bool)
+    """
+    # tarr = np.concatenate((arr[:, 1:2], arr), axis=1)  # pad='wrap'
+    dataframe = pd.DataFrame(arr.T)
+    func = getattr(pd, func_name)
+    rm_dataframe = func(dataframe, window=window, center=True, min_periods=0)
+    difference = rm_dataframe
+    difference = np.abs(rm_dataframe - dataframe)
+    diffarr = difference.values.T
+    bool_arr = diffarr > threshold
+    return bool_arr
