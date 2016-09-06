@@ -27,7 +27,6 @@ class ImageVis(object):
 
     def show_single_cell(self, label_id=1, MARGIN=30, frame=0):
         ch = getattr(self.images, self.state[1])
-
         label_id_arr = self.data.__getitem__('cell_id')
         idx = np.where(label_id_arr == label_id)[0][0]
         x_vec = self.data.__getitem__((self.state[0], self.state[1], 'x'))[idx, :]

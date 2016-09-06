@@ -117,9 +117,9 @@ def filter_frames_by_diff(arr, pd_func_name='diff', PERIOD=1, THRES=0.1, FRAME_S
     func = getattr(pd.DataFrame, pd_func_name)
 
     if not absolute:
-        above_thres = func(pd.DataFrame(tarr), periods=1, axis=1).values > THRES
+        above_thres = func(pd.DataFrame(tarr), periods=PERIOD, axis=1).values > THRES
     elif absolute:
-        above_thres = np.abs(func(pd.DataFrame(tarr), periods=1, axis=1).values) > THRES
+        above_thres = np.abs(func(pd.DataFrame(tarr), periods=PERIOD, axis=1).values) > THRES
     above_thres = above_thres[:, 1:]
     fn = partial(extend_true, LEFT=LEFT, RIGHT=RIGHT)
     above_thres = np.apply_along_axis(fn, axis=1, arr=above_thres)
@@ -147,7 +147,7 @@ def filter_from_last_frames(arr, FRAME_START=0, FRAME_END=None, LEFT=0):
 
 
 def calc_rolling_func_filter(arr, func_name='rolling_mean', window=3, threshold=0.1):
-    """Calculate pandas rolling statistics and remove something above thres.
+    """Calculate the differences from pandas rolling statistics and remove something above thres.
     Can use rolling_median/rolling_mean/rolling_sum...
 
     Examples:
