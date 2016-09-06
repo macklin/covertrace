@@ -18,6 +18,7 @@ import re
 from scipy.ndimage import imread
 from functools import partial
 from image_vis import ImageVis
+from joblib import Parallel, delayed
 
 
 class Stage(object):
@@ -26,14 +27,6 @@ class Stage(object):
     _any = True
     new_file_name = 'arr_modified.npz'
 
-staged = Stage()
-
-'''Example of state
-state = ['cytoplasm']
-state = ['nuclei', 'FITC']
-state = ['nuclei', 'FITC', 'area']
-state = [['nuclei', 'FITC', 'area'], ['cytoplasm', 'FITC', 'area']]
-'''
 
 class Plotter(object):
     def __init__(self, slice_prop, operation):
@@ -48,10 +41,10 @@ class Plotter(object):
         fig, axes = self._make_fig_axes(len(self.slice_prop))
         for data, ax in zip(self.slice_prop, axes):
             if data['arr'].any():
-                operation(data['arr'], ax)
+                operation(data['arr'], data['time'], ax)
                 ax.set_title('{0}\n{1}/{2}/{3},\nprop={4}'.format(*[data['name']] + data['labels'] + [data['prop']]))
         return fig, axes
-    
+
     def _make_fig_axes(self, num_axes):
         fig, axes = plt.subplots(1, num_axes, figsize=(15, 5), sharey=True)
         plt.tight_layout(pad=2, w_pad=0.5, h_pad=2.0)
@@ -65,13 +58,13 @@ class Plotter(object):
 class Sites(object):
     def __init__(self, parent_folder, subfolders=None, conditions=[], file_name='arr.npz'):
         parent_folder = parent_folder.rstrip('/')
+        self.staged = Stage()
         if subfolders is None:
             folders, conditions = [parent_folder, ], [conditions, ]
         else:
             folders = [join(parent_folder, i) for i in subfolders]
         for folder, condition in izip_longest(folders, conditions):
-            setattr(self, basename(folder), Site(folder, file_name, condition))
-        self.staged = staged
+            setattr(self, basename(folder), Site(folder, file_name, condition, self.staged))
 
     def set_state(self, state):
         for site in self:
@@ -134,13 +127,41 @@ class Sites(object):
         return len([num for num, i in enumerate(self)])
 
 
+# class ParSites(object):
+#     def __init__(self, parent_folder, subfolders=None, conditions=[],
+#                  file_name='arr.npz', ncores=4):
+#         self.ncores = ncores
+#         nlen = [int(i * np.ceil(len(subfolders))/ncores) for i in range(ncores)]
+#         nlen.append(None)
+#         for i, ii in zip(nlen[:-1], nlen[1:]):
+#             self.sites_list.append(Sites(parent_folder, subfolders[i:ii],
+#                                          conditions=[], file_name='arr.npz'))
+
+#     def __getattr__(self, name):
+#         for sites in self.sites_list:
+#             sites.__getattr__(name)
+
+#     @staticmethod
+#     def par_getattr(sites, name):
+#         sites.__getattr__(name)
+
+#     def iterate(self, operation, pid=None, *args, **kwargs):
+#         if 'ops_plotter' in operation.func.__module__:
+#             plotter = Plotter(self.collect(), operation)
+#             fig, axes = plotter.plot()
+#             return fig, axes
+#         else:
+#             Parallel(n_jobs=self.ncores)(delayed(self.par_getattr)(sites, 'operate',
+#                                          pid=pid) for sites in self.sites_list)
+
+
 class Site(object):
     """name: equivalent to attribute name of Sites
     """
     merged = 0
     _state = None
 
-    def __init__(self, directory, file_name, condition=None):
+    def __init__(self, directory, file_name, condition=None, staged=None):
         self.directory = directory
         self.file_name = file_name
         self.condition = condition
@@ -153,25 +174,32 @@ class Site(object):
 
     @property
     def data(self):
-        if not self.name == staged.name:
-            staged.name = self.name
-            staged.dataholder = self._read_arr(join(self.directory, self.file_name))
-        return staged.dataholder
+        if not self.name == self._staged.name:
+            self._staged.name = self.name
+            self._staged.dataholder = self._read_arr(join(self.directory, self.file_name))
+        return self._staged.dataholder
 
     def _read_arr(self, path):
         file_obj = np.load(path)
-        return DataHolder(file_obj['data'], file_obj['labels'].tolist(), self.name, self._state)
+        if 'time' not in file_obj:  # removed later
+            _time = range(100)
+        else:
+            _time = file_obj['time'].tolist()
+        return DataHolder(file_obj['data'], file_obj['labels'].tolist(), _time,
+                          self.name, self._state, self._staged)
 
-    def save(self, arr=[], labels=[], new_file_name=None):
+    def save(self, arr=[], labels=[], time=[], new_file_name=None):
         if not len(arr):
             arr = self.data.arr
         if not labels:
             labels = self.data.labels
-        new_file_name = staged.new_file_name if not new_file_name else new_file_name
-        dic_save = {'data': arr, 'labels': labels}
+        if not time:
+            time = self.data.time
+        new_file_name = self._staged.new_file_name if not new_file_name else new_file_name
+        dic_save = {'data': arr, 'labels': labels, 'time': time}
         np.savez_compressed(join(self.directory, new_file_name), **dic_save)
-        self.file_name = staged.new_file_name
-        staged.name = None
+        self.file_name = self._staged.new_file_name
+        self._staged.name = None
         print '\r'+'{0}: file_name is updated to {1}'.format(self.name, self.file_name),
 
     def operate(self, operation, pid=1, ax=None):
@@ -183,7 +211,6 @@ class Site(object):
             # Does not explicitly change the array but it is modified inside.
             operation(self.data.slice_arr)
         if 'ops_sort' in operation.func.__module__:
-            #NEW
             sort_idx = operation(self.data.slice_arr)
             self.data.arr[:] = self.data.arr[sort_idx, :, :]
         self.save()
@@ -205,18 +232,19 @@ class Site(object):
     def images(self):
         objects = set([i[0] for i in self.data.labels if len(i) == 3])
         channels = set([i[1] for i in self.data.labels if len(i) == 3])
-        return ImageHolder(self.directory, channels, objects, self._state)
+        return ImageHolder(self.directory, channels, objects, self._state, self._staged)
 
 
 class ImageHolder(object):
-    def __init__(self, directory, channels, objects, state):
+    def __init__(self, directory, channels, objects, state, staged):
         self.dir = directory
         for ch in channels:
             setattr(self, ch, partial(self._channels, ch=ch))
         for ob in objects:
             setattr(self, ob, partial(self.outlines, ob=ob))
         self._state = state
-        self.visualize = ImageVis(self, staged.dataholder, self._state)
+        self._staged = staged
+        self.visualize = ImageVis(self, self._staged.dataholder, self._state)
 
     def _retrieve_file_name_by_frame(self, subfolder, frame):
         files = os.listdir(join(self.dir, subfolder))
@@ -238,7 +266,6 @@ class ImageHolder(object):
         return imread(join(self.dir, 'outlines', obj_file_name))
 
 
-
 class DataHolder(object):
     '''
     >>> labels = [i for i in product(['nuc', 'cyto'], ['CFP', 'YFP'], ['x', 'y'])]
@@ -250,7 +277,7 @@ class DataHolder(object):
     >>> print DataHolder(arr, labels)['nuc', 'CFP', 'x'].shape
     (10, 5)
     '''
-    def __init__(self, arr, labels, name=None, state=None):
+    def __init__(self, arr, labels, time, name=None, state=None, staged=None):
         if not [i for i in labels if 'prop' in i]:
             zero_arr = np.expand_dims(np.zeros(arr[0, :, :].shape), axis=0)
             arr = np.concatenate([zero_arr, arr], axis=0)
@@ -263,6 +290,8 @@ class DataHolder(object):
         self.labels = labels
         self.name = name
         self._state = state
+        self._staged = staged
+        self.time = time
 
     @property
     def prop(self):
@@ -309,16 +338,15 @@ class DataHolder(object):
         for num, warr in enumerate(slice_arr):
             for pi in prop_set:
                 ret.append(dict(arr=self.extract_prop_slice(warr, self.prop, pid=pi),
-                                name=self.name, prop=int(pi), labels=state[num]))
+                                name=self.name, prop=int(pi), labels=state[num], time=self.time))
         return ret
 
-    @classmethod
-    def extract_prop_slice(cls, arr, prop, pid=None):
-        bool_ind = cls.retrieve_bool_ind(prop, pid)
+    def extract_prop_slice(self, arr, prop, pid=None):
+        bool_ind = self.retrieve_bool_ind(prop, pid, self._staged)
         return np.take(arr, np.where(bool_ind)[0], axis=-2)
 
     @staticmethod
-    def retrieve_bool_ind(prop, pid):
+    def retrieve_bool_ind(prop, pid, staged):
         func = np.any if staged._any else np.all
         return func(prop == pid, axis=1)
 
@@ -338,7 +366,7 @@ class DataHolder(object):
     def drop_cells(self, pid):
         '''Drop cells.
         '''
-        bool_ind = self.retrieve_bool_ind(self.prop, pid)
+        bool_ind = self.retrieve_bool_ind(self.prop, pid, self._staged)
         self.arr = np.take(self.arr, np.where(-bool_ind)[0], axis=-2)
 
 

@@ -23,8 +23,8 @@ def pd_array_convert(path):
     np.savez_compressed(join(dirname(path), file_name), **dic_save)
 
 
-def save_output(arr, labels, path):
-    dic_save = {'data': arr, 'labels': labels}
+def save_output(arr, labels, time, path):
+    dic_save = {'data': arr, 'labels': labels, 'time': time}
     np.savez_compressed(path, **dic_save)
 
 

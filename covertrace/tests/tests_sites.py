@@ -8,7 +8,7 @@ from os.path import dirname, join, abspath, exists
 import sys
 ROOTDIR = dirname(dirname(dirname(abspath(__file__))))
 sys.path.append(dirname(dirname(__file__)))
-from data_array import Site
+from data_array import Site, Stage
 from functools import partial
 from utils.datatype_handling import save_output
 from data_array import Sites
@@ -21,20 +21,22 @@ labels = [i for i in product(obj, ch, prop)]
 labels.append(['abs_id', ])
 arr = np.zeros((len(labels), 10, 5))  # 10 cells, 5 frames
 arr[:, :, 1:] = 10
+time = range(arr.shape[-1])
 
 DATA_PATH = join(ROOTDIR, 'data', 'tests.npz')
+
 
 class Test_site(unittest.TestCase):
     def setUp(self):
         if not exists(DATA_PATH):
-            save_output(arr, labels, DATA_PATH)
+            save_output(arr, labels, time, DATA_PATH)
 
     def test_having_data(self):
-        site = Site(dirname(DATA_PATH), 'tests.npz')
+        site = Site(dirname(DATA_PATH), 'tests.npz', staged=Stage())
         self.assertTrue(isinstance(site.data.arr, np.ndarray))
 
     def test_save_file(self):
-        site = Site(dirname(DATA_PATH), 'tests.npz')
+        site = Site(dirname(DATA_PATH), 'tests.npz', staged=Stage())
         self.assertFalse(exists(join(site.directory, 'new_tests.npz')))
         site.save(new_file_name='new_tests.npz')
         self.assertTrue(exists(join(site.directory, 'new_tests.npz')))
@@ -47,9 +49,12 @@ class Test_sites(unittest.TestCase):
         self.subfolders = ('sample1', 'sample2')
         self.file_name = 'tests.npz'
         for sub in self.subfolders:
-            if not exists(join(self.parent_folder, sub)):
-                os.makedirs(join(self.parent_folder, sub))
-                save_output(arr, labels, join(self.parent_folder, sub, self.file_name))
+            if not exists(join(self.parent_folder, sub, 'tests.npz')):
+                try:
+                    os.makedirs(join(self.parent_folder, sub))
+                except:
+                    pass
+                save_output(arr, labels, time, join(self.parent_folder, sub, self.file_name))
 
     def tearDown(self):
         for sub in self.subfolders:
@@ -95,10 +100,10 @@ class Test_sites(unittest.TestCase):
 class Test_site_operate(unittest.TestCase):
     def setUp(self):
         if not exists(DATA_PATH):
-            save_output(arr, labels, DATA_PATH)
+            save_output(arr, labels, time, DATA_PATH)
 
     def test_having_data(self):
-        site = Site(dirname(DATA_PATH), 'tests.npz')
+        site = Site(dirname(DATA_PATH), 'tests.npz', staged=Stage())
         import ops_filter
         op = partial(ops_filter.normalize_data)
         site._set_state(['nuclei', 'DAPI', 'area'])
