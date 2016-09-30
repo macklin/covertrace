@@ -212,9 +212,9 @@ class Site(object):
         new_file_name = self._staged.new_file_name if not new_file_name else new_file_name
         dic_save = {'data': arr, 'labels': labels, 'time': time}
         np.savez_compressed(join(self.directory, new_file_name), **dic_save)
+        print '\r'+'{0}: file_name is updated to {1}'.format(self.name, new_file_name),
         self.file_name = self._staged.new_file_name
         self._staged.name = None
-        print '\r'+'{0}: file_name is updated to {1}'.format(self.name, self.file_name),
 
     def operate(self, operation, pid=1, ax=None):
         if 'ops_bool' in operation.func.__module__:
