@@ -37,16 +37,7 @@ def sort_labels_and_arr(labels, arr=[]):
     >>> sort_labels_and_arr(labels)
     [['a', 'B', '1'], ['aprop'], ['b', 'B', '2'], ['prop']]
     '''
-    # single_labels, single_idx = sort_multi_labels([a for a in labels if len(a) == 1])
-    # multi_labels, multi_idx = sort_multi_labels([a for a in labels if len(a) == 3])
-    # # sort_idx = single_idx + [i + len(single_idx) for i in multi_idx]
-    # sort_idx = []
-    # for i in labels:
-    #     if i in multi_labels:
-    #         sort_idx.append(multi_labels.index(i) + len(single_labels))
-    #     elif i in single_labels:
-    #         sort_idx.append(single_labels.index(i))
-    # labels = [labels[i] for i in sort_idx]
+
     labels = [list(i) for i in labels]
     labels, sort_idx = sort_multi_lists(labels)
     if not len(arr):
@@ -54,27 +45,6 @@ def sort_labels_and_arr(labels, arr=[]):
     if len(arr):
         arr = arr[sort_idx, :, :]
         return labels, arr
-
-#
-# def sort_multi_labels(labels):
-#     '''
-#     >>> sort_multi_labels([['b'], ['c'], ['a']])
-#     ([['a'], ['b'], ['c']], [2, 0, 1])
-#     >>> labels = [['a', 'B', '1'], ['a', 'A', '1'], ['b', 'A', '3'], ['b', 'B', '2']]
-#     >>> sort_multi_labels(labels)
-#     ([['a', 'A', '1'], ['a', 'B', '1'], ['b', 'A', '3'], ['b', 'B', '2']], [1, 0, 2, 3])
-#     '''
-#     sort_idx = []
-#     if labels:
-#         if len(labels[0]) == 1:
-#             sort_func = lambda x: (x[1][0])
-#         elif len(labels[0]) == 2:
-#             sort_func = lambda x: (x[1][0], x[1][1])
-#         elif len(labels[0]) == 3:
-#             sort_func = lambda x: (x[1][0], x[1][1], x[1][2])
-#         sort_idx = [i[0] for i in sorted(enumerate(labels), key=sort_func)]
-#         labels = [labels[i] for i in sort_idx]
-#     return labels, sort_idx
 
 
 def uniform_list_length(labels):

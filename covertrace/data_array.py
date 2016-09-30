@@ -7,7 +7,7 @@ Due to the memory issue, we do not want to load all the data at once.
 '''
 
 from __future__ import division
-from os.path import join, basename, exists
+from os.path import join, basename, exists, abspath, dirname
 from itertools import izip, izip_longest, product
 import pickle
 import os
@@ -56,7 +56,21 @@ class Plotter(object):
 
 
 class Sites(object):
-    def __init__(self, parent_folder, subfolders=None, conditions=[], file_name='arr.npz'):
+    """
+
+    INPUT
+        parent_folder (string)
+        subfolders (list): folder names under parent_folder where npz files are stored.
+                           These names are used as variables, so be aware of special characters.
+        conditions (list): conditions are corresponding to subfolders. Used when merging dataset.
+
+    Examples
+    >>> parent_folder = join(dirname(dirname(abspath(__file__))), 'data', 'sample_result')
+    >>> sites = Sites(parent_folder, subfolders=['Pos005', 'Pos006'], conditions=['IL1B', 'IL1B'])
+    >>> print sites.Pos005.data.arr.shape
+    (101, 139, 60)
+    """
+    def __init__(self, parent_folder, subfolders=None, conditions=[], file_name='df.npz'):
         parent_folder = parent_folder.rstrip('/')
         self.staged = Stage()
         if subfolders is None:
@@ -270,12 +284,12 @@ class DataHolder(object):
     '''
     >>> labels = [i for i in product(['nuc', 'cyto'], ['CFP', 'YFP'], ['x', 'y'])]
     >>> arr = np.zeros((len(labels), 10, 5))
-    >>> print DataHolder(arr, labels)['nuc'].shape
+    >>> print DataHolder(arr, labels[:], range(5))['nuc'].shape
     (4, 10, 5)
-    >>> print DataHolder(arr, labels)['cyto', 'CFP'].shape
+    >>> print DataHolder(arr, labels[:], range(5))['cyto', 'CFP'].shape
     (2, 10, 5)
-    >>> print DataHolder(arr, labels)['nuc', 'CFP', 'x'].shape
-    (10, 5)
+    # >>> print DataHolder(arr, labels[:], range(5))['nuc', 'CFP', 'x'].shape
+    # (10, 5)
     '''
     def __init__(self, arr, labels, time, name=None, state=None, staged=None):
         if not [i for i in labels if 'prop' in i]:
