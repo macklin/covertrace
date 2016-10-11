@@ -23,6 +23,7 @@ from joblib import Parallel, delayed
 
 class Stage(object):
     name = None
+    state = None
     dataholder = None
     _any = True
     new_file_name = 'arr_modified.npz'
@@ -81,8 +82,7 @@ class Sites(object):
             setattr(self, basename(folder), Site(folder, file_name, condition, self.staged))
 
     def set_state(self, state):
-        for site in self:
-            site._set_state(state)
+        self.staged.state = state
 
     def __iter__(self):
         __num_keys = 0
@@ -173,7 +173,6 @@ class Site(object):
     """name: equivalent to attribute name of Sites
     """
     merged = 0
-    _state = None
 
     def __init__(self, directory, file_name, condition=None, staged=None):
         self.directory = directory
@@ -181,10 +180,6 @@ class Site(object):
         self.condition = condition
         self.name = basename(directory)
         self._staged = staged
-
-    def _set_state(self, state):
-        self._state = state
-        self.data._state = state
 
     @property
     def data(self):
@@ -226,7 +221,7 @@ class Site(object):
             operation(self.data.slice_arr)
         if 'ops_sort' in operation.func.__module__:
             sort_idx = operation(self.data.slice_arr)
-            self.data.arr[:] = self.data.arr[sort_idx, :, :]
+            self.data.arr[:] = self.data.arr[:, sort_idx, :]
         self.save()
 
     def _drop_prop(self, pid):
@@ -317,7 +312,7 @@ class DataHolder(object):
         if isinstance(item, str):
             lis = [n for n, i in enumerate(self.labels) if i[0] == item]
         elif isinstance(item, tuple) or isinstance(item, list):
-            lis = [n for n, i in enumerate(self.labels) if tuple(i[:len(item)]) == tuple(item)]
+            lis = [n for n, i in enumerate(self.labels) if i[:len(item)] == item]
         if len(lis) == 1:
             return self.arr[lis[0], :, :]
         else:
@@ -325,16 +320,16 @@ class DataHolder(object):
 
     @property
     def slice_arr(self):
-        '''If state is a list of lists, return a list of arr.
-        If state is a single list, return 2D or 3D numpy array.
+        '''If staged.state is a list of lists, return a list of arr.
+        If staged.state is a single list, return 2D or 3D numpy array.
         '''
-        if isinstance(self._state[0], list):
+        if isinstance(staged.state[0], list):
             arr_list = []
-            for st in self._state:
+            for st in staged.state:
                 arr_list.append(self.__getitem__(tuple(st)))
             return arr_list
-        elif isinstance(self._state[0], str):
-            return self.__getitem__(tuple(self._state))
+        elif isinstance(staged.state[0], str):
+            return self.__getitem__(tuple(staged.state))
         else:
             return self.arr
 
@@ -342,12 +337,12 @@ class DataHolder(object):
     def slice_prop(self):
         '''Return a list of dict containing array sliced by prop value.'''
         ret = []
-        if isinstance(self._state[0], str):
+        if isinstance(staged.state[0], str):
             slice_arr = [self.slice_arr, ]
-            state = [self._state, ]
+            state = [staged.state, ]
         else:
             slice_arr = self.slice_arr
-            state = self._state
+            state = staged.state
         prop_set = np.unique(self['prop'])
         for num, warr in enumerate(slice_arr):
             for pi in prop_set:
@@ -382,6 +377,10 @@ class DataHolder(object):
         '''
         bool_ind = self.retrieve_bool_ind(self.prop, pid, self._staged)
         self.arr = np.take(self.arr, np.where(-bool_ind)[0], axis=-2)
+
+    def visit(self, visitor):
+        '''visitor pattern.'''
+        visitor(self)
 
 
 if __name__ == '__main__':
