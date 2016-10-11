@@ -289,8 +289,8 @@ class DataHolder(object):
     (4, 10, 5)
     >>> print DataHolder(arr, labels[:], range(5))['cyto', 'CFP'].shape
     (2, 10, 5)
-    # >>> print DataHolder(arr, labels[:], range(5))['nuc', 'CFP', 'x'].shape
-    # (10, 5)
+    >>> print DataHolder(arr, labels[:], range(5))['nuc', 'CFP', 'x'].shape
+    (10, 5)
     '''
     def __init__(self, arr, labels, time, name=None, state=None, staged=None):
         if not [i for i in labels if 'prop' in i]:
