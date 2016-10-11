@@ -23,6 +23,7 @@ from joblib import Parallel, delayed
 
 class Stage(object):
     name = None
+    state = None
     dataholder = None
     _any = True
     new_file_name = 'arr_modified.npz'
@@ -288,8 +289,8 @@ class DataHolder(object):
     (4, 10, 5)
     >>> print DataHolder(arr, labels[:], range(5))['cyto', 'CFP'].shape
     (2, 10, 5)
-    # >>> print DataHolder(arr, labels[:], range(5))['nuc', 'CFP', 'x'].shape
-    # (10, 5)
+    >>> print DataHolder(arr, labels[:], range(5))['nuc', 'CFP', 'x'].shape
+    (10, 5)
     '''
     def __init__(self, arr, labels, time, name=None, state=None, staged=None):
         if not [i for i in labels if 'prop' in i]:
@@ -382,7 +383,6 @@ class DataHolder(object):
         '''
         bool_ind = self.retrieve_bool_ind(self.prop, pid, self._staged)
         self.arr = np.take(self.arr, np.where(-bool_ind)[0], axis=-2)
-
 
 if __name__ == '__main__':
     pass
